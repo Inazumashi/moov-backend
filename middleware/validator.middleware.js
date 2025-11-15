@@ -1,0 +1,1 @@
+//S'assure que les données envoyées par l'application Flutter (ex: un e-mail ou un prix) sont valides et ne sont pas dangereuses avant de les traiter.

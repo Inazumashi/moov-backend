@@ -1,0 +1,1 @@
+//Définit les URL pour la recherche et la publication (ex: /api/v1/rides/search).

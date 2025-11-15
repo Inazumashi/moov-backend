@@ -1,0 +1,1 @@
+//Fonctions pour créer un nouvel utilisateur, trouver un utilisateur par son email pour la connexion, et récupérer ses infos.

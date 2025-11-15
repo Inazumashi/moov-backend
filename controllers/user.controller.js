@@ -1,0 +1,1 @@
+//Logique pour récupérer les statistiques complètes de l'utilisateur (note moyenne, nombre de trajets) et gérer les mises à jour.
