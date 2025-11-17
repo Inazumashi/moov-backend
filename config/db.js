@@ -16,11 +16,12 @@ db.run(`CREATE TABLE IF NOT EXISTS users (
   last_name TEXT,
   phone TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+
 )`, (err) => {
   if (err) {
     console.error('❌ Erreur création table users:', err);
   } else {
-    console.log('✅ Table "users" prête !');
+    console.log('✅ Table "users" prête et cree !');
   }
 });
 
