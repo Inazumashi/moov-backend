@@ -21,7 +21,7 @@ db.run(`CREATE TABLE IF NOT EXISTS users (
   if (err) {
     console.error('❌ Erreur création table users:', err);
   } else {
-    console.log('✅ Table "users" prête et cree !');
+    console.log('✅ Table "users" prête et creer !');
   }
 });
 
