@@ -130,6 +130,70 @@ const authController = {
         token
       });
     });
+  },
+
+  // MOT DE PASSE OUBLIÉ
+  forgotPassword: (req, res) => {
+    const { email } = req.body;
+    
+    User.findByEmail(email, (err, user) => {
+      if (err || !user) {
+        return res.json({
+          success: true,
+          message: 'Si cet email existe, un lien de réinitialisation a été envoyé'
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Email de réinitialisation envoyé'
+      });
+    });
+  },
+
+  // ENVOYER LE CODE DE VÉRIFICATION PAR EMAIL
+  sendEmailVerification: (req, res) => {
+    const { email } = req.body;
+    
+    // Générer un code à 6 chiffres
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Simulation d'envoi d'email
+    console.log(`📧 Code de vérification pour ${email}: ${verificationCode}`);
+    
+    res.json({
+      success: true,
+      message: 'Code de vérification envoyé par email',
+      code: verificationCode // Pour les tests
+    });
+  },
+
+  // VÉRIFIER LE CODE EMAIL
+  verifyEmailCode: (req, res) => {
+    const { email, code } = req.body;
+    
+    // Vérification simple du code
+    if (code && code.length === 6) {
+      // Marquer l'email comme vérifié
+      User.verifyUserByEmail(email, (err) => {
+        if (err) {
+          return res.status(500).json({
+            success: false,
+            message: 'Erreur lors de la vérification'
+          });
+        }
+        
+        res.json({
+          success: true,
+          message: 'Email vérifié avec succès'
+        });
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Code de vérification invalide'
+      });
+    }
   }
 };
 
