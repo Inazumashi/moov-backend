@@ -129,3 +129,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`📍 Réseau: http://[votre-ip]:${PORT}`);
   console.log(`🏥 Health: http://localhost:${PORT}/api/health`);
 });
+// Après la création des tables dans db.js, ajoutez :
+db.run(`INSERT OR IGNORE INTO users (email, password, first_name, last_name, phone, is_verified) 
+        VALUES ('test@example.com', 'password', 'Test', 'User', '+212600000000', 1)`);
