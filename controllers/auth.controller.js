@@ -1,9 +1,9 @@
-// controllers/auth.controller.js - VERSION CORRIGÉE
 const bcrypt = require('bcryptjs');
 const User = require('../models/user.model');
+const Ride = require('../models/ride.model'); // ✅ AJOUT 1 : Import du modèle Ride
 const { generateToken } = require('../config/jwt');
 const nodemailer = require('nodemailer');
-const db = require('../config/db');  // Déplacé en haut pour cohérence
+const db = require('../config/db');
 
 // Configuration email (à mettre dans .env)
 const transporter = nodemailer.createTransport({
@@ -171,10 +171,14 @@ const authController = {
   // INSCRIPTION COMPLÈTE
   register: async (req, res) => {
     try {
-      const { email, password, first_name, last_name, phone, university, profile_type, student_id } = req.body;
+      // ✅ AJOUT 2 : On récupère 'university_id' (envoyé par Flutter) et 'routes'
+      const { email, password, first_name, last_name, phone, university, university_id, profile_type, student_id, routes } = req.body;
+
+      // ✅ Harmonisation : Flutter envoie university_id, le backend utilise university
+      const finalUniversity = university || university_id;
 
       // Validation
-      if (!email || !password || !first_name || !last_name || !phone || !university || !profile_type) {
+      if (!email || !password || !first_name || !last_name || !phone || !finalUniversity || !profile_type) {
         return res.status(400).json({
           success: false,
           message: 'Tous les champs obligatoires sont requis'
@@ -214,7 +218,7 @@ const authController = {
           first_name,
           last_name,
           phone,
-          university,
+          university: finalUniversity, // Utilisation de la variable harmonisée
           profile_type,
           student_id
         }, (err, newUser) => {
@@ -223,6 +227,33 @@ const authController = {
             return res.status(500).json({
               success: false,
               message: 'Erreur lors de la création du compte'
+            });
+          }
+
+          // ✅ AJOUT 3 : Sauvegarde des trajets (routes) si présents
+          if (routes && Array.isArray(routes) && routes.length > 0) {
+            console.log(`Sauvegarde de ${routes.length} trajets pour user ${newUser.id}`);
+            
+            routes.forEach(route => {
+              // Adaptation des données Flutter vers le modèle Ride Backend
+              // Note: Comme on n'a pas les ID des stations, on met l'info textuelle dans 'notes'
+              const rideData = {
+                driver_id: newUser.id,
+                departure_station_id: null, 
+                arrival_station_id: null,
+                departure_date: new Date().toISOString().split('T')[0], // Date du jour par défaut
+                departure_time: route.heure || '08:00', // Valeur par défaut si vide
+                available_seats: 4, 
+                price_per_seat: 0,
+                recurrence: 'weekly',
+                recurrence_days: route.jours, // Flutter envoie ["Lun", "Mar"], Backend gère JSON
+                recurrence_end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString(), // +1 an
+                notes: `Trajet habituel: ${route.depart} -> ${route.arrivee}`
+              };
+
+              Ride.create(rideData, (err) => {
+                if (err) console.error("Erreur sauvegarde route automatique:", err);
+              });
             });
           }
 
@@ -243,7 +274,7 @@ const authController = {
                   <li>🚗 Rechercher des trajets vers votre université</li>
                   <li>👥 Proposer vos propres trajets</li>
                   <li>⭐ Noter vos covoitureurs</li>
-                  <li>🎯 Rejoindre la communauté ${university}</li>
+                  <li>🎯 Rejoindre la communauté ${finalUniversity}</li>
                 </ul>
                 <p style="margin-top: 30px;">
                   <a href="${process.env.APP_URL || 'http://localhost:3000'}" 
@@ -268,7 +299,7 @@ const authController = {
               email: newUser.email,
               first_name: newUser.first_name,
               last_name: newUser.last_name,
-              university,
+              university: finalUniversity, // Renvoie la bonne université
               profile_type
             },
             token
@@ -462,12 +493,14 @@ const authController = {
         universities
       });
     });
-  },  // <-- AJOUT DE CETTE VIRGULE ICI !
+  },
 
   // Mettre à jour le profil
   updateProfile: async (req, res) => {
     try {
-      const userId = req.userId;
+      // ✅ Adaptation: Utiliser req.user.id (du middleware) ou req.userId selon votre middleware
+      // J'ai mis req.user.id qui est plus standard avec JWT
+      const userId = req.user ? req.user.id : req.userId; 
       const { first_name, last_name, phone, is_driver, has_car, car_model, car_seats } = req.body;
 
       // Validation
@@ -544,6 +577,6 @@ const authController = {
     }
   }
 
-}; // <-- FERMETURE CORRECTE DE L'OBJET
+};
 
 module.exports = authController;
