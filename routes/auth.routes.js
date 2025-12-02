@@ -1,22 +1,34 @@
+// routes/auth.routes.js
 const express = require('express');
-const authController = require('../controllers/auth.controller');
-
 const router = express.Router();
+const authController = require('../controllers/auth.controller');
+const authMiddleware = require('../middleware/auth.middleware');
 
-// POST /api/auth/register
+// Public routes
+router.post('/check-email', authController.checkUniversityEmail);
+router.post('/verify-code', authController.verifyEmailCode);
 router.post('/register', authController.register);
-
-// POST /api/auth/login
 router.post('/login', authController.login);
+router.post('/resend-code', authController.resendVerificationCode);
+router.get('/universities', authController.getUniversities);
 
-// POST /api/auth/forgot-password
-router.post('/forgot-password', authController.forgotPassword);
+// Protected routes
+router.get('/profile', authMiddleware, (req, res) => {
+  // req.userId est disponible via le middleware
+  User.findById(req.userId, (err, user) => {
+    if (err || !user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Utilisateur non trouvé'
+      });
+    }
+    res.json({
+      success: true,
+      user
+    });
+  });
+});
 
-// --- AJOUTEZ CES DEUX ROUTES ---
-// POST /api/auth/send-email-verification
-router.post('/send-email-verification', authController.sendEmailVerification);
-
-// POST /api/auth/verify-email-code
-router.post('/verify-email-code', authController.verifyEmailCode);
+router.put('/profile', authMiddleware, authController.updateProfile);
 
 module.exports = router;

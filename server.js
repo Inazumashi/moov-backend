@@ -1,134 +1,126 @@
+require('./db/init'); // crée les tables automatiquement
+// server.js - VERSION COMPLÈTE POUR FLUTTER
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
+const helmet = require('helmet');
+const morgan = require('morgan');
+const path = require('path');
 
-// Import de la base de données
-const db = require('./config/db');
+// Import des routes
+const authRoutes = require('./routes/auth.routes');
+const stationRoutes = require('./routes/station.routes');
+const rideRoutes = require('./routes/ride.routes');
+const searchRoutes = require('./routes/search.routes');
+const reservationRoutes = require('./routes/reservation.routes');
+const reviewRoutes = require('./routes/review.routes');
+const advancedRoutes = require('./routes/advanced.routes');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// ✅ CORRECTION CORS - Configuration complète
-app.use(cors({
-  origin: '*', // Autorise toutes les origines pour le test
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With']
-}));
+// 🔧 CONFIGURATION CORS POUR FLUTTER
+const corsOptions = {
+  origin: [
+    'http://localhost',          // Web
+    'http://localhost:3000',     // React dev
+    'http://localhost:5000',     // Node dev
+    'http://localhost:5001',     // <--- AJOUTÉ
+    'http://10.0.2.2:5000',     // Android Emulator
+    'http://10.0.2.2:5001',      // <--- AJOUTÉ
+    'http://10.0.2.2',          // Android Emulator alternative
+    'exp://localhost:19000',     // Expo
+    'exp://192.168.1.*:19000',  // Expo sur réseau
+    'http://localhost:19006',    // Expo web
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With']
+};
 
-// Middleware pour les préflight OPTIONS
-app.options('*', cors());
-
+// Middleware
+app.use(cors(corsOptions));
+app.use(helmet());
+app.use(morgan('dev'));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Routes d'authentification
-app.use('/api/auth', require('./routes/auth.routes'));
+// Routes API
+app.use('/api/auth', authRoutes);
+app.use('/api/stations', stationRoutes);
+app.use('/api/rides', rideRoutes);
+app.use('/api/search', searchRoutes);
+app.use('/api/reservations', reservationRoutes);
+app.use('/api/reviews', reviewRoutes);
+app.use('/api/advanced', advancedRoutes);
 
-// ✅ ROUTES ESSENTIELLES - Version simplifiée et robuste
-
-// Route de santé
+// Route pour vérifier que l'API fonctionne
 app.get('/api/health', (req, res) => {
-  console.log('✅ Health check appelé');
-  res.json({ 
-    success: true,
-    message: '🚀 API MovApp fonctionnelle!',
-    timestamp: new Date().toISOString()
-  });
+  res.json({
+    status: 'OK',
+    service: 'Moov API',
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
 });
 
-// Route pour les universités
-app.get('/api/universities', (req, res) => {
-  console.log('✅ Universities appelé');
-  db.all('SELECT * FROM universities', (err, rows) => {
-    if (err) {
-      console.error('❌ Erreur universités:', err);
-      return res.status(500).json({ error: 'Erreur serveur' });
-    }
-    console.log(`✅ ${rows.length} universités retournées`);
-    res.json({ universities: rows });
-  });
+// Documentation API (optionnel)
+app.get('/api', (req, res) => {
+  res.json({
+    message: 'Bienvenue sur l\'API Moov',
+    endpoints: {
+      auth: {
+        login: 'POST /api/auth/login',
+        register: 'POST /api/auth/register',
+        verify: 'POST /api/auth/verify-email',
+        profile: 'GET /api/auth/profile (protected)'
+      },
+      stations: {
+        autocomplete: 'GET /api/stations/autocomplete?q=nom',
+        nearby: 'GET /api/stations/nearby?lat=xx&lng=yy',
+        favorites: 'GET /api/stations/favorites (protected)'
+      },
+      rides: {
+        create: 'POST /api/rides (protected)',
+        search: 'GET /api/rides/search?from=X&to=Y&date=...',
+        myRides: 'GET /api/rides/my-rides (protected)'
+      }
+    }
+  });
 });
 
-// Route pour les favoris
-app.get('/api/rides/favorites', (req, res) => {
-  console.log('✅ Favorites appelé');
-  // Pour l'instant, retourne un tableau vide
-  res.json({ favorites: [] });
+// Gestion des erreurs 404
+app.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'Route non trouvée',
+    requestedUrl: req.originalUrl
+  });
 });
 
-// Route pour la recherche
-app.get('/api/rides/search', (req, res) => {
-  console.log('✅ Search appelé avec params:', req.query);
-  
-  const demoRides = [
-    {
-      id: 1,
-      driver_id: 1,
-      first_name: 'Karim',
-      last_name: 'El Idrissi',
-      departure_address: 'Ben Guerir',
-      destination_address: 'Casablanca', 
-      departure_date: new Date().toISOString(),
-      available_seats: 4,
-      price_per_seat: 70.0,
-      car_model: 'Renault Clio',
-      car_color: 'Bleu',
-      description: 'Trajet confortable',
-      rating: 4.7
-    },
-    {
-      id: 2, 
-      driver_id: 2,
-      first_name: 'Amina',
-      last_name: 'Laaroussi',
-      departure_address: 'UM6P Campus',
-      destination_address: 'Marrakech',
-      departure_date: new Date(Date.now() + 86400000).toISOString(), // Demain
-      available_seats: 2,
-      price_per_seat: 45.0,
-      car_model: 'Peugeot 208',
-      car_color: 'Rouge',
-      description: 'Trajet rapide',
-      rating: 4.9
-    }
-  ];
-  
-  res.json({ rides: demoRides });
+// Gestionnaire d'erreurs global
+app.use((err, req, res, next) => {
+  console.error('🔥 Erreur serveur:', err.stack);
+  
+  const statusCode = err.status || 500;
+  const message = err.message || 'Erreur serveur interne';
+  
+  res.status(statusCode).json({
+    success: false,
+    message,
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
 });
 
-// Route pour mes trajets publiés
-app.get('/api/rides/my-published', (req, res) => {
-  console.log('✅ My published rides appelé');
-  res.json({ rides: [] });
-});
+// Port configuration
+const PORT = process.env.PORT || 5001; // <--- PORT PAR DÉFAUT MODIFIÉ À 5001
+const HOST = process.env.HOST || '0.0.0.0';
 
-// Route de test globale
-app.get('/', (req, res) => {
-  console.log('✅ Root appelé');
-  res.json({ 
-    success: true,
-    message: '🚀 API MovApp fonctionnelle!',
-    endpoints: {
-      health: 'GET /api/health',
-      auth: {
-        register: 'POST /api/auth/register',
-        login: 'POST /api/auth/login'
-      },
-      universities: 'GET /api/universities',
-      favorites: 'GET /api/rides/favorites', 
-      search: 'GET /api/rides/search',
-      my_rides: 'GET /api/rides/my-published'
-    }
-  });
+// Démarrer le serveur
+app.listen(PORT, HOST, () => {
+  console.log(`🚀 Serveur Moov API démarré`);
+  console.log(`📡 URL: http://${HOST}:${PORT}`);
+  console.log(`🌐 Environnement: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔧 CORS activé pour Flutter/Expo`);
+  console.log(`📚 Documentation: http://${HOST}:${PORT}/api`);
 });
-
-// ✅ DÉMARRAGE SUR TOUTES LES INTERFACES
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Serveur démarré sur le port ${PORT}`);
-  console.log(`📍 Local: http://localhost:${PORT}`);
-  console.log(`📍 Réseau: http://[votre-ip]:${PORT}`);
-  console.log(`🏥 Health: http://localhost:${PORT}/api/health`);
-});
-// Après la création des tables dans db.js, ajoutez :
-db.run(`INSERT OR IGNORE INTO users (email, password, first_name, last_name, phone, is_verified) 
-        VALUES ('test@example.com', 'password', 'Test', 'User', '+212600000000', 1)`);
