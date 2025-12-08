@@ -141,15 +141,15 @@ const Ride = {
                       ds.name as departure_station_name,
                       ds.city as departure_city,
                       ds.address as departure_address,
-                      as.name as arrival_station_name,
-                      as.city as arrival_city,
-                      as.address as arrival_address,
+                      stat_arr.name as arrival_station_name,
+                      stat_arr.city as arrival_city,
+                      stat_arr.address as arrival_address,
                       (SELECT COUNT(*) FROM bookings b 
                        WHERE b.ride_id = r.id AND b.status IN ('confirmed', 'completed')) as booked_seats
                FROM rides r
                JOIN users d ON r.driver_id = d.id
                JOIN stations ds ON r.departure_station_id = ds.id
-               JOIN stations as ON r.arrival_station_id = as.id
+               JOIN stations stat_arr ON r.arrival_station_id = stat_arr.id
                WHERE r.status = 'active' 
                AND r.available_seats >= ?`;
     
@@ -243,14 +243,14 @@ const Ride = {
     let sql = `SELECT r.*, 
                       ds.name as departure_station,
                       ds.city as departure_city,
-                      as.name as arrival_station,
-                      as.city as arrival_city,
+                      stat_arr.name as arrival_station,
+                      stat_arr.city as arrival_city,
                       d.first_name as driver_first_name,
                       d.last_name as driver_last_name,
                       d.rating as driver_rating
                FROM rides r
                JOIN stations ds ON r.departure_station_id = ds.id
-               JOIN stations as ON r.arrival_station_id = as.id
+               JOIN stations stat_arr ON r.arrival_station_id = stat_arr.id
                JOIN users d ON r.driver_id = d.id
                WHERE r.status = 'active' 
                AND r.available_seats > 0`;
@@ -263,7 +263,7 @@ const Ride = {
     }
     
     if (arrivalQuery) {
-      sql += ` AND (as.name LIKE ? OR as.city LIKE ?)`;
+      sql += ` AND (stat_arr.name LIKE ? OR stat_arr.city LIKE ?)`;
       params.push(`%${arrivalQuery}%`, `%${arrivalQuery}%`);
     }
     
@@ -292,17 +292,17 @@ const Ride = {
                         ds.address as departure_address,
                         ds.latitude as departure_lat,
                         ds.longitude as departure_lng,
-                        as.name as arrival_station_name,
-                        as.city as arrival_city,
-                        as.address as arrival_address,
-                        as.latitude as arrival_lat,
-                        as.longitude as arrival_lng,
+                        stat_arr.name as arrival_station_name,
+                        stat_arr.city as arrival_city,
+                        stat_arr.address as arrival_address,
+                        stat_arr.latitude as arrival_lat,
+                        stat_arr.longitude as arrival_lng,
                         (SELECT COUNT(*) FROM bookings b 
                          WHERE b.ride_id = r.id AND b.status IN ('confirmed', 'completed')) as booked_seats
                  FROM rides r
                  JOIN users d ON r.driver_id = d.id
                  JOIN stations ds ON r.departure_station_id = ds.id
-                 JOIN stations as ON r.arrival_station_id = as.id
+                 JOIN stations stat_arr ON r.arrival_station_id = stat_arr.id
                  WHERE r.id = ?`;
     
     db.get(sql, [id], callback);
@@ -317,7 +317,7 @@ const Ride = {
                FROM rides r
                JOIN users d ON r.driver_id = d.id
                JOIN stations ds ON r.departure_station_id = ds.id
-               JOIN stations as ON r.arrival_station_id = as.id
+               JOIN stations stat_arr ON r.arrival_station_id = stat_arr.id
                WHERE r.departure_station_id = ? 
                AND r.arrival_station_id = ?
                AND r.status = 'active'
@@ -340,11 +340,11 @@ const Ride = {
   getRecurringRides: (driverId, callback) => {
     const sql = `SELECT r.*,
                         ds.name as departure_station,
-                        as.name as arrival_station,
+                        stat_arr.name as arrival_station,
                         COUNT(gr.id) as generated_count
                  FROM rides r
                  JOIN stations ds ON r.departure_station_id = ds.id
-                 JOIN stations as ON r.arrival_station_id = as.id
+                 JOIN stations stat_arr ON r.arrival_station_id = stat_arr.id
                  LEFT JOIN generated_rides gr ON r.id = gr.parent_ride_id
                  WHERE r.driver_id = ? 
                  AND r.recurrence != 'none'
@@ -397,11 +397,11 @@ const Ride = {
                         d.last_name as driver_last_name,
                         d.rating as driver_rating,
                         ds.name as departure_station,
-                        as.name as arrival_station
+                        stat_arr.name as arrival_station
                  FROM rides r
                  JOIN users d ON r.driver_id = d.id
                  JOIN stations ds ON r.departure_station_id = ds.id
-                 JOIN stations as ON r.arrival_station_id = as.id
+                 JOIN stations stat_arr ON r.arrival_station_id = stat_arr.id
                  WHERE r.status = 'active'
                  AND DATE(r.departure_date) = DATE('now')
                  AND r.available_seats > 0

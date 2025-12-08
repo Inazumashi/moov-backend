@@ -42,13 +42,13 @@ const Route = {
     const sql = `SELECT pr.*,
                         ds.name as departure_station_name,
                         ds.city as departure_city,
-                        as.name as arrival_station_name,
-                        as.city as arrival_city,
+                        stat_arr.name as arrival_station_name,
+                        stat_arr.city as arrival_city,
                         COUNT(DISTINCT r.id) as total_rides,
                         AVG(r.price_per_seat) as avg_price
                  FROM popular_routes pr
                  JOIN stations ds ON pr.departure_station_id = ds.id
-                 JOIN stations as ON pr.arrival_station_id = as.id
+                 JOIN stations stat_arr ON pr.arrival_station_id = stat_arr.id
                  LEFT JOIN rides r ON (r.departure_station_id = pr.departure_station_id 
                                        AND r.arrival_station_id = pr.arrival_station_id
                                        AND r.status = 'active')
@@ -65,11 +65,11 @@ const Route = {
                         r.departure_station_id,
                         r.arrival_station_id,
                         ds.name as departure_station,
-                        as.name as arrival_station,
+                        stat_arr.name as arrival_station,
                         COUNT(*) as frequency
                  FROM rides r
                  JOIN stations ds ON r.departure_station_id = ds.id
-                 JOIN stations as ON r.arrival_station_id = as.id
+                 JOIN stations stat_arr ON r.arrival_station_id = stat_arr.id
                  WHERE r.driver_id = ?
                  GROUP BY r.departure_station_id, r.arrival_station_id
                  ORDER BY frequency DESC
