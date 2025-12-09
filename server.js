@@ -103,7 +103,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Port configuration - CHANGÉ À 3000
+// Port de configuration - CHANGÉ À 3000
 const PORT = process.env.PORT || 3000; // ← PORT 3000
 const HOST = process.env.HOST || 'localhost';
 
