@@ -1,5 +1,4 @@
-require('./db/init'); // crée les tables automatiquement
-// server.js - VERSION COMPLÈTE POUR FLUTTER
+// server.js - MODIFIEZ LE PORT À 3000
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -16,29 +15,37 @@ const reservationRoutes = require('./routes/reservation.routes');
 const reviewRoutes = require('./routes/review.routes');
 const advancedRoutes = require('./routes/advanced.routes');
 
+// IMPORTANT: Initialiser la base de données
+require('./db/init');
+
 const app = express();
 
-// 🔧 CONFIGURATION CORS POUR FLUTTER
+// 🔧 CONFIGURATION CORS POUR FLUTTER - MISE À JOUR
 const corsOptions = {
-  origin: [
-    'http://localhost',          // Web
-    'http://localhost:3000',     // React dev
-    'http://localhost:5000',     // Node dev
-    'http://localhost:5001',     // <--- AJOUTÉ
-    'http://10.0.2.2:5000',     // Android Emulator
-    'http://10.0.2.2:5001',      // <--- AJOUTÉ
-    'http://10.0.2.2',          // Android Emulator alternative
-    'exp://localhost:19000',     // Expo
-    'exp://192.168.1.*:19000',  // Expo sur réseau
-    'http://localhost:19006',    // Expo web
-  ],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With']
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // mobile / postman
+
+    // Autoriser tout ce qui vient de localhost, quel que soit le port
+    if (origin.startsWith("http://localhost")) {
+      return callback(null, true);
+    }
+
+    // Autoriser aussi pour l'émulateur Android
+    if (origin.startsWith("http://10.0.2.2")) {
+      return callback(null, true);
+    }
+
+    callback(new Error("CORS not allowed for this origin: " + origin));
+  },
+  credentials: true,
+  methods: ['GET','POST','PUT','DELETE','PATCH','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization','Accept','Origin','X-Requested-With']
 };
+
 
 // Middleware
 app.use(cors(corsOptions));
+app.use(cors({ origin: '*' }));
 app.use(helmet());
 app.use(morgan('dev'));
 app.use(express.json());
@@ -55,72 +62,58 @@ app.use('/api/advanced', advancedRoutes);
 
 // Route pour vérifier que l'API fonctionne
 app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    service: 'Moov API',
-    version: '1.0.0',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
-  });
-});
-
-// Documentation API (optionnel)
-app.get('/api', (req, res) => {
-  res.json({
-    message: 'Bienvenue sur l\'API Moov',
-    endpoints: {
-      auth: {
-        login: 'POST /api/auth/login',
-        register: 'POST /api/auth/register',
-        verify: 'POST /api/auth/verify-email',
-        profile: 'GET /api/auth/profile (protected)'
-      },
-      stations: {
-        autocomplete: 'GET /api/stations/autocomplete?q=nom',
-        nearby: 'GET /api/stations/nearby?lat=xx&lng=yy',
-        favorites: 'GET /api/stations/favorites (protected)'
-      },
-      rides: {
-        create: 'POST /api/rides (protected)',
-        search: 'GET /api/rides/search?from=X&to=Y&date=...',
-        myRides: 'GET /api/rides/my-rides (protected)'
-      }
-    }
-  });
+  res.json({
+    status: 'OK',
+    service: 'Moov API',
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    database: 'SQLite',
+    port: 3000
+  });
 });
 
 // Gestion des erreurs 404
 app.use('*', (req, res) => {
-  res.status(404).json({
-    success: false,
-    message: 'Route non trouvée',
-    requestedUrl: req.originalUrl
-  });
+  res.status(404).json({
+    success: false,
+    message: 'Route non trouvée',
+    requestedUrl: req.originalUrl,
+    available_routes: [
+      '/api/health',
+      '/api/auth/universities',
+      '/api/stations/popular',
+      '/api/auth/login',
+      '/api/auth/register'
+    ]
+  });
 });
 
 // Gestionnaire d'erreurs global
 app.use((err, req, res, next) => {
-  console.error('🔥 Erreur serveur:', err.stack);
-  
-  const statusCode = err.status || 500;
-  const message = err.message || 'Erreur serveur interne';
-  
-  res.status(statusCode).json({
-    success: false,
-    message,
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
-  });
+  console.error('🔥 Erreur serveur:', err.stack);
+  
+  const statusCode = err.status || 500;
+  const message = err.message || 'Erreur serveur interne';
+  
+  res.status(statusCode).json({
+    success: false,
+    message,
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
 });
 
-// Port configuration
-const PORT = process.env.PORT || 5001; // <--- PORT PAR DÉFAUT MODIFIÉ À 5001
-const HOST = process.env.HOST || '0.0.0.0';
+// Port configuration - CHANGÉ À 3000
+const PORT = process.env.PORT || 3000; // ← PORT 3000
+const HOST = process.env.HOST || 'localhost';
 
 // Démarrer le serveur
 app.listen(PORT, HOST, () => {
-  console.log(`🚀 Serveur Moov API démarré`);
-  console.log(`📡 URL: http://${HOST}:${PORT}`);
-  console.log(`🌐 Environnement: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔧 CORS activé pour Flutter/Expo`);
-  console.log(`📚 Documentation: http://${HOST}:${PORT}/api`);
+  console.log(`🚀 Serveur Moov API démarré`);
+  console.log(`📡 URL: http://${HOST}:${PORT}`);
+  console.log(`🌐 Environnement: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔧 CORS activé pour Flutter/Expo`);
+  console.log(`📚 Documentation: http://${HOST}:${PORT}/api`);
+  console.log(`🏥 Health check: http://${HOST}:${PORT}/api/health`);
+  console.log(`🎓 Universités: http://${HOST}:${PORT}/api/auth/universities`);
 });

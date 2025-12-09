@@ -1,0 +1,13 @@
+[33md4fa6b6[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m Revert "synchronisation finale Backend/Frontend"
+[33m683e8b1[m[33m ([m[1;31morigin/main[m[33m)[m Alignement des noms entre le backend et le frontend
+[33m12cb091[m synchronisation finale Backend/Frontend
+[33m5a1f32b[m 🎉 MOOV BACKEND - COMPLÉTION SUCCÈS 🎉
+[33m4bb7bc5[m 🎉 MOOV BACKEND - COMPLÉTION SUCCÈS 🎉
+[33mcb6a990[m gestion de connexion au backend
+[33m6430438[m correction de database et fde server
+[33md104ebe[m 🔐 AUTHENTIFICATION PAR EMAIL - API
+[33mdf2c32c[m add comment
+[33m12eadcf[m Merge branch 'main' of https://github.com/Inazumashi/moov-backend
+[33m0b7f9f9[m add comment
+[33m17bf088[m README.md
+[33m50f6327[m Initial commit backend auth
