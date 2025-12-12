@@ -28,7 +28,17 @@ router.get('/profile', authMiddleware, (req, res) => {
     });
   });
 });
+// File: routes/auth.routes.js - AJOUTEZ CETTE ROUTE
+// Route pour valider le token
+router.get('/validate-token', authMiddleware, (req, res) => {
+  res.json({
+    success: true,
+    message: 'Token valide',
+    userId: req.userId
+  });
+});
 
+// ... autres routes existantes
 router.put('/profile', authMiddleware, authController.updateProfile);
 
 module.exports = router;
