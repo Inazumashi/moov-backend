@@ -12,7 +12,7 @@ router.post('/login', authController.login);
 router.post('/resend-code', authController.resendVerificationCode);
 router.get('/universities', authController.getUniversities);
 
-// Protected routes
+// Protected routes 
 router.get('/profile', authMiddleware, (req, res) => {
   // req.userId est disponible via le middleware
   User.findById(req.userId, (err, user) => {

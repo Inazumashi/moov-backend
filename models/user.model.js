@@ -48,18 +48,34 @@ const User = {
 
   // Sauvegarder code de vérification
   saveVerificationCode: (email, code, expiresAt, callback) => {
-    const sql = `INSERT INTO verification_codes (email, code, expires_at) 
-                 VALUES (?, ?, ?)`;
-    db.run(sql, [email, code, expiresAt], callback);
-  },
-
-  // Vérifier code
-  verifyCode: (email, code, callback) => {
-    const sql = `SELECT * FROM verification_codes 
-                 WHERE email = ? AND code = ? AND expires_at > datetime('now') 
-                 ORDER BY created_at DESC LIMIT 1`;
-    db.get(sql, [email, code], callback);
-  },
+  // Assure-toi que expiresAt est au bon format
+  let expiresAtFormatted = expiresAt;
+  if (typeof expiresAt === 'number') {
+    // Si c'est un timestamp, convertis en ISO
+    expiresAtFormatted = new Date(expiresAt).toISOString();
+  } else if (expiresAt instanceof Date) {
+    // Si c'est un Date object, convertis en ISO
+    expiresAtFormatted = expiresAt.toISOString();
+  }
+  
+  const sql = `INSERT INTO verification_codes (email, code, expires_at) 
+               VALUES (?, ?, ?)`;
+  console.log('💾 Sauvegarde code formaté:', { 
+    email, 
+    code, 
+    expiresAt: expiresAtFormatted 
+  });
+  
+  db.run(sql, [email, code, expiresAtFormatted], callback);
+},
+  /// Dans models/user.model.js
+verifyCode: (email, code, callback) => {
+  const sql = `SELECT * FROM verification_codes 
+               WHERE email = ? AND code = ? AND expires_at > datetime('now') 
+               ORDER BY created_at DESC LIMIT 1`;
+  console.log('🔍 Vérification code:', { email, code, time: new Date().toISOString() }); // AJOUTE
+  db.get(sql, [email, code], callback);
+},
 
   // Supprimer code utilisé
   deleteVerificationCode: (id, callback) => {

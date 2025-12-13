@@ -168,68 +168,110 @@ const authController = {
     }
   },
 
-  // INSCRIPTION COMPLÈTE
-  register: async (req, res) => {
-    try {
-      const { email, password, first_name, last_name, phone, university, profile_type, student_id } = req.body;
+  // INSCRIPTION COMPLÈTE - VERSION RÉELLE AVEC VÉRIFICATION
+register: async (req, res) => {
+  try {
+    const { email, password, first_name, last_name, phone, university, profile_type, student_id: providedStudentId } = req.body;
 
-      // Validation
-      if (!email || !password || !first_name || !last_name || !phone || !university || !profile_type) {
-        return res.status(400).json({
+    // Validation
+    if (!email || !password || !first_name || !last_name || !phone || !university || !profile_type) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tous les champs obligatoires sont requis'
+      });
+    }
+
+    // ✅ CORRECTION : Créer une nouvelle variable pour student_id
+    let finalStudentId = providedStudentId;
+    
+    if (profile_type === 'student') {
+      // Générer un student_id automatique si non fourni
+      if (!finalStudentId) {
+        const emailPrefix = email.split('@')[0];
+        const timestamp = Date.now().toString().slice(-6);
+        finalStudentId = `${emailPrefix}_${timestamp}`;
+      }
+    }
+
+    // Vérifier si email existe déjà
+    User.findByEmail(email, async (err, existingUser) => {
+      if (err) {
+        return res.status(500).json({
           success: false,
-          message: 'Tous les champs obligatoires sont requis'
+          message: 'Erreur serveur'
         });
       }
 
-      if (profile_type === 'student' && !student_id) {
+      if (existingUser) {
         return res.status(400).json({
           success: false,
-          message: 'Numéro étudiant requis pour les étudiants'
+          message: 'Cet email est déjà utilisé'
         });
       }
 
-      // Vérifier si email existe déjà
-      User.findByEmail(email, async (err, existingUser) => {
+      // Hacher mot de passe
+      const hashedPassword = await bcrypt.hash(password, 12);
+
+      // ✅ CRÉER UTILISATEUR NON VÉRIFIÉ
+      User.create({
+        email,
+        password: hashedPassword,
+        first_name,
+        last_name,
+        phone,
+        university,
+        profile_type,
+        student_id: finalStudentId,
+        is_verified: 0 // ⚠️ IMPORTANT : Non vérifié au départ
+      }, (err, newUser) => {
         if (err) {
+          console.error('Erreur création utilisateur:', err);
           return res.status(500).json({
             success: false,
-            message: 'Erreur serveur'
+            message: 'Erreur lors de la création du compte'
           });
         }
 
-        if (existingUser) {
-          return res.status(400).json({
-            success: false,
-            message: 'Cet email est déjà utilisé'
-          });
-        }
+        // ✅ GÉNÉRER ET ENVOYER LE CODE DE VÉRIFICATION RÉEL
+        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+        // REMPLACE PAR :
+        // REMPLACE PAR :
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        const expiresAtISO = expiresAt.toISOString(); // Format SQLite compatible
 
-        // Hacher mot de passe
-        const hashedPassword = await bcrypt.hash(password, 12);
-
-        // Créer utilisateur
-        User.create({
-          email,
-          password: hashedPassword,
-          first_name,
-          last_name,
-          phone,
-          university,
-          profile_type,
-          student_id
-        }, (err, newUser) => {
+        User.saveVerificationCode(email, verificationCode, expiresAtISO, async (err) => {
           if (err) {
-            console.error('Erreur création utilisateur:', err);
-            return res.status(500).json({
-              success: false,
-              message: 'Erreur lors de la création du compte'
-            });
+            console.error('Erreur sauvegarde code:', err);
+            // On continue quand même, l'utilisateur pourra redemander un code
           }
 
-          // Générer token
-          const token = generateToken(newUser.id);
+          // ✅ ENVOYER EMAIL DE VÉRIFICATION RÉEL
+          try {
+            await transporter.sendMail({
+              from: '"Moov Université" <noreply@moov-university.com>',
+              to: email,
+              subject: 'Vérifiez votre email - Moov',
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                  <h2 style="color: #1E3A8A;">Bienvenue sur Moov ! 🚗</h2>
+                  <p>Votre compte a été créé avec succès.</p>
+                  <p>Pour finaliser votre inscription, voici votre code de vérification :</p>
+                  <div style="background-color: #f0f0f0; padding: 20px; text-align: center; font-size: 24px; letter-spacing: 5px; margin: 20px 0;">
+                    <strong>${verificationCode}</strong>
+                  </div>
+                  <p><strong>Ce code expirera dans 10 minutes.</strong></p>
+                  <p>Si vous n'avez pas créé de compte, ignorez cet email.</p>
+                  <hr style="margin: 30px 0;">
+                  <p style="color: #666; font-size: 12px;">© ${new Date().getFullYear()} Moov - Covoiturage Universitaire</p>
+                </div>
+              `
+            });
+            console.log(`✅ Email de vérification envoyé à ${email}`);
+          } catch (emailError) {
+            console.error('❌ Erreur envoi email vérification:', emailError);
+          }
 
-          // Envoyer email de bienvenue
+          // ✅ ENVOYER EMAIL DE BIENVENUE AUSSI
           transporter.sendMail({
             from: '"Moov Université" <welcome@moov-university.com>',
             to: email,
@@ -238,7 +280,8 @@ const authController = {
               <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <h2 style="color: #1E3A8A;">Bonjour ${first_name} ! 👋</h2>
                 <p>Votre compte Moov a été créé avec succès !</p>
-                <p>Vous pouvez maintenant :</p>
+                <p><strong>Important :</strong> Vérifiez votre email avec le code reçu pour activer votre compte.</p>
+                <p>Une fois vérifié, vous pourrez :</p>
                 <ul>
                   <li>🚗 Rechercher des trajets vers votre université</li>
                   <li>👥 Proposer vos propres trajets</li>
@@ -249,7 +292,7 @@ const authController = {
                   <a href="${process.env.APP_URL || 'http://localhost:3000'}" 
                      style="background-color: #1E3A8A; color: white; padding: 12px 24px; 
                             text-decoration: none; border-radius: 5px; display: inline-block;">
-                    Commencer à covoiturer
+                    Accéder à Moov
                   </a>
                 </p>
                 <hr style="margin: 30px 0;">
@@ -260,30 +303,34 @@ const authController = {
             `
           }).catch(err => console.error('Erreur email de bienvenue:', err));
 
+          // ✅ RÉPONSE POUR FLUTTER
           res.status(201).json({
             success: true,
-            message: 'Compte créé avec succès!',
+            message: 'Compte créé ! Vérifiez votre email pour le code.',
             user: {
               id: newUser.id,
               email: newUser.email,
               first_name: newUser.first_name,
               last_name: newUser.last_name,
               university,
-              profile_type
+              profile_type,
+              is_verified: false // ⚠️ Important : dire à Flutter que c'est pas vérifié
             },
-            token
+            token: generateToken(newUser.id), // Token temporaire
+            needs_verification: true, // ⚠️ Important : Flutter doit afficher l'écran de vérification
+            debug_code: process.env.NODE_ENV === 'development' ? verificationCode : undefined
           });
         });
       });
-    } catch (error) {
-      console.error('Erreur inscription:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Erreur serveur'
-      });
-    }
-  },
-
+    });
+  } catch (error) {
+    console.error('Erreur inscription:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur'
+    });
+  }
+},
   // CONNEXION
   login: async (req, res) => {
     try {
