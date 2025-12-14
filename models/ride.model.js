@@ -1,5 +1,8 @@
-// models/ride.model.js - VERSION CORRIGÉE
+// models/ride.model.js - VERSION CORRIGÉE FINALE (Accepte 'pending' ET 'active')
 const db = require('../config/db');
+
+// Constante pour la limite de prix minimum valide
+const MIN_VALID_PRICE_FILTER = 250;
 
 const Ride = {
   // Créer un trajet avec stations
@@ -19,7 +22,9 @@ const Ride = {
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
     
     const departureDateTime = `${departure_date} ${departure_time}`;
-    const arrivalDateTime = arrival_date && arrival_time ? `${arrival_date} ${arrival_time}` : null;
+    const arrivalDateTime = arrival_date && arrival_time 
+      ? `${arrival_date} ${arrival_time}` 
+      : null;
     
     db.run(sql, [
       driver_id, departure_station_id, arrival_station_id,
@@ -92,6 +97,7 @@ const Ride = {
         
       case 'weekly':
         if (!days || !Array.isArray(days)) break;
+        
         const dayMap = {
           'monday': 1, 'tuesday': 2, 'wednesday': 3,
           'thursday': 4, 'friday': 5, 'saturday': 6, 'sunday': 0
@@ -119,7 +125,7 @@ const Ride = {
     return dates;
   },
 
-  // Recherche avancée de trajets
+  // ✅ CORRECTION 1: Recherche avancée de trajets (PENDING + ACTIVE)
   searchAdvanced: (searchParams, callback) => {
     const {
       departure_station_id,
@@ -150,10 +156,12 @@ const Ride = {
                JOIN users d ON r.driver_id = d.id
                JOIN stations ds ON r.departure_station_id = ds.id
                JOIN stations stat_arr ON r.arrival_station_id = stat_arr.id
-               WHERE r.status = 'active' 
-               AND r.available_seats >= ?`;
+               WHERE r.status IN ('pending', 'active')`; // ✅ CORRECTION ICI
+               
     
-    const params = [min_seats];
+    const params = [];
+    let dateFilterAdded = false;
+    let dateOnly;
     
     if (departure_station_id) {
       sql += ` AND r.departure_station_id = ?`;
@@ -165,15 +173,35 @@ const Ride = {
       params.push(arrival_station_id);
     }
     
+    // CORRECTION DÉFINITIVE 1: Search Advanced (Utilisation de DATE())
     if (departure_date) {
-      sql += ` AND DATE(r.departure_date) = DATE(?)`;
-      params.push(departure_date);
+      try {
+        const dateObj = new Date(departure_date);
+        if (isNaN(dateObj.getTime())) throw new Error('Invalid date');
+
+        const year = dateObj.getFullYear();
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        
+        dateOnly = `${year}-${month}-${day}`;
+        
+        // Utiliser la fonction native DATE() de SQLite
+        sql += ` AND DATE(r.departure_date) = ?`;
+        params.push(dateOnly);
+        dateFilterAdded = true;
+      } catch (e) {
+        console.warn('Date de recherche non valide:', departure_date);
+      }
     }
     
-    if (max_price) {
+    // DÉBUT CONTOURNEMENT POUR FILTRE CLIENT TROP BAS
+    let effectiveMaxPrice = max_price ? parseInt(max_price) : null;
+    
+    if (effectiveMaxPrice) {
       sql += ` AND r.price_per_seat <= ?`;
-      params.push(max_price);
+      params.push(effectiveMaxPrice);
     }
+    // FIN CONTOURNEMENT
     
     // Tri
     const sortMap = {
@@ -189,40 +217,13 @@ const Ride = {
     // Pagination
     const offset = (page - 1) * limit;
     sql += ` LIMIT ? OFFSET ?`;
-    params.push(limit, offset);
+    const selectParams = [...params, parseInt(limit), offset];
     
-    db.all(sql, params, (err, rides) => {
+    db.all(sql, selectParams, (err, rides) => {
       if (err) return callback(err);
       
       // Compter le total pour la pagination
-      let countSql = `SELECT COUNT(*) as total 
-                      FROM rides r
-                      WHERE r.status = 'active' 
-                      AND r.available_seats >= ?`;
-      
-      const countParams = [min_seats];
-      
-      if (departure_station_id) {
-        countSql += ` AND r.departure_station_id = ?`;
-        countParams.push(departure_station_id);
-      }
-      
-      if (arrival_station_id) {
-        countSql += ` AND r.arrival_station_id = ?`;
-        countParams.push(arrival_station_id);
-      }
-      
-      if (departure_date) {
-        countSql += ` AND DATE(r.departure_date) = DATE(?)`;
-        countParams.push(departure_date);
-      }
-      
-      if (max_price) {
-        countSql += ` AND r.price_per_seat <= ?`;
-        countParams.push(max_price);
-      }
-      
-      db.get(countSql, countParams, (err, countResult) => {
+      Ride._countAdvancedResults(searchParams, dateFilterAdded, dateOnly, effectiveMaxPrice, (err, total) => {
         if (err) return callback(err);
         
         callback(null, {
@@ -230,15 +231,58 @@ const Ride = {
           pagination: {
             page: parseInt(page),
             limit: parseInt(limit),
-            total: countResult.total,
-            total_pages: Math.ceil(countResult.total / limit)
+            total: total,
+            total_pages: Math.ceil(total / limit)
           }
         });
       });
     });
   },
 
-  // Recherche par stations (auto-complétion)
+  // ✅ CORRECTION 2: Comptage des résultats (PENDING + ACTIVE)
+  _countAdvancedResults: (searchParams, dateFilterAdded, dateOnly, effectiveMaxPrice, callback) => {
+    const {
+      departure_station_id,
+      arrival_station_id,
+      min_seats = 1
+    } = searchParams;
+    
+    let countSql = `SELECT COUNT(*) as total 
+                    FROM rides r
+                    WHERE r.status IN ('pending', 'active')  
+                    AND r.available_seats >= ?`; // ✅ CORRECTION ICI
+    
+    const countParams = [min_seats];
+    
+    if (departure_station_id) {
+      countSql += ` AND r.departure_station_id = ?`;
+      countParams.push(departure_station_id);
+    }
+    
+    if (arrival_station_id) {
+      countSql += ` AND r.arrival_station_id = ?`;
+      countParams.push(arrival_station_id);
+    }
+    
+    // CORRECTION DÉFINITIVE 2: Comptage (Utilisation de DATE())
+    if (dateFilterAdded) {
+      countSql += ` AND DATE(r.departure_date) = ?`;
+      countParams.push(dateOnly);
+    }
+    
+    // MÊME LOGIQUE DANS LA REQUÊTE DE COMPTAGE
+    if (effectiveMaxPrice) {
+      countSql += ` AND r.price_per_seat <= ?`;
+      countParams.push(effectiveMaxPrice);
+    }
+    
+    db.get(countSql, countParams, (err, result) => {
+      if (err) return callback(err);
+      callback(null, result.total);
+    });
+  },
+
+  // ✅ CORRECTION 3: Recherche par stations (PENDING + ACTIVE)
   searchByStations: (departureQuery, arrivalQuery, date = null, callback) => {
     let sql = `SELECT r.*, 
                       ds.name as departure_station,
@@ -252,8 +296,8 @@ const Ride = {
                JOIN stations ds ON r.departure_station_id = ds.id
                JOIN stations stat_arr ON r.arrival_station_id = stat_arr.id
                JOIN users d ON r.driver_id = d.id
-               WHERE r.status = 'active' 
-               AND r.available_seats > 0`;
+               WHERE r.status IN ('pending', 'active')  
+               AND r.available_seats > 0`; // ✅ CORRECTION ICI
     
     const params = [];
     
@@ -267,13 +311,27 @@ const Ride = {
       params.push(`%${arrivalQuery}%`, `%${arrivalQuery}%`);
     }
     
+    // CORRECTION DÉFINITIVE 3: Search By Stations (Utilisation de DATE())
     if (date) {
-      sql += ` AND DATE(r.departure_date) = DATE(?)`;
-      params.push(date);
+      try {
+        const dateObj = new Date(date);
+        if (isNaN(dateObj.getTime())) throw new Error('Invalid date');
+
+        const year = dateObj.getFullYear();
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        
+        const dateOnly = `${year}-${month}-${day}`;
+        
+        // Utiliser la fonction native DATE() de SQLite
+        sql += ` AND DATE(r.departure_date) = ?`;
+        params.push(dateOnly);
+      } catch (e) {
+        console.warn('Date de recherche rapide non valide:', date);
+      }
     }
     
     sql += ` ORDER BY r.departure_date ASC LIMIT 50`;
-    
     db.all(sql, params, callback);
   },
 
@@ -285,7 +343,7 @@ const Ride = {
                         d.last_name as driver_last_name,
                         d.phone as driver_phone,
                         d.rating as driver_rating,
-                        d.total_trips,
+                        d.total_trips as driver_total_trips,
                         d.is_driver,
                         ds.name as departure_station_name,
                         ds.city as departure_city,
@@ -308,20 +366,20 @@ const Ride = {
     db.get(sql, [id], callback);
   },
 
-  // Trajets similaires (même itinéraire)
+  // ✅ CORRECTION 4: Trajets similaires (PENDING + ACTIVE)
   findSimilar: (departureStationId, arrivalStationId, excludeRideId = null, limit = 5, callback) => {
     let sql = `SELECT r.*, 
                       d.first_name, d.last_name, d.rating as driver_rating,
                       ds.name as departure_station,
-                      as.name as arrival_station
+                      stat_arr.name as arrival_station
                FROM rides r
                JOIN users d ON r.driver_id = d.id
                JOIN stations ds ON r.departure_station_id = ds.id
                JOIN stations stat_arr ON r.arrival_station_id = stat_arr.id
                WHERE r.departure_station_id = ? 
                AND r.arrival_station_id = ?
-               AND r.status = 'active'
-               AND r.available_seats > 0`;
+               AND r.status IN ('pending', 'active')  
+               AND r.available_seats > 0`; // ✅ CORRECTION ICI
     
     const params = [departureStationId, arrivalStationId];
     
@@ -384,13 +442,13 @@ const Ride = {
     db.run(sql, callback);
   },
 
-  // Mettre à jour le statut d'un trajet (ex: complété, annulé)
+  // Mettre à jour le statut d'un trajet
   updateStatus: (rideId, status, callback) => {
     const sql = `UPDATE rides SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
     db.run(sql, [status, rideId], callback);
   },
 
-  // Obtenir les trajets disponibles pour aujourd'hui
+  // ✅ CORRECTION 5: Trajets d'aujourd'hui (PENDING + ACTIVE)
   getTodayRides: (callback) => {
     const sql = `SELECT r.*,
                         d.first_name as driver_first_name,
@@ -402,10 +460,10 @@ const Ride = {
                  JOIN users d ON r.driver_id = d.id
                  JOIN stations ds ON r.departure_station_id = ds.id
                  JOIN stations stat_arr ON r.arrival_station_id = stat_arr.id
-                 WHERE r.status = 'active'
+                 WHERE r.status IN ('pending', 'active')  
                  AND DATE(r.departure_date) = DATE('now')
                  AND r.available_seats > 0
-                 ORDER BY r.departure_time`;
+                 ORDER BY r.departure_time`; // ✅ CORRECTION ICI
     
     db.all(sql, callback);
   }

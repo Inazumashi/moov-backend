@@ -20,12 +20,24 @@ const UNIVERSITIES = [
   // Ajoutez d'autres universités au besoin
 ];
 
+// Accept emails that end with the university domain or any subdomain
 const isValidUniversityEmail = (email) => {
-  return UNIVERSITIES.some(univ => email.endsWith(`@${univ.domain}`));
+  if (!email || typeof email !== 'string') return false;
+  const lower = email.toLowerCase();
+  return UNIVERSITIES.some(univ => {
+    const domain = univ.domain.toLowerCase();
+    // matches @domain or @*.domain (subdomains allowed)
+    return new RegExp(`@([^.@]+\.)*${domain}$`).test(lower);
+  });
 };
 
 const getUniversityFromEmail = (email) => {
-  return UNIVERSITIES.find(univ => email.endsWith(`@${univ.domain}`));
+  if (!email || typeof email !== 'string') return null;
+  const lower = email.toLowerCase();
+  return UNIVERSITIES.find(univ => {
+    const domain = univ.domain.toLowerCase();
+    return new RegExp(`@([^.@]+\.)*${domain}$`).test(lower);
+  }) || null;
 };
 
 module.exports = {

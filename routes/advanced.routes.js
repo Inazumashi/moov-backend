@@ -3,6 +3,7 @@ const router = express.Router();
 const authMiddleware = require('../middleware/auth.middleware');
 const FavoriteRide = require('../models/favoriteRide.model');
 const Ride = require('../models/ride.model');
+const db = require('../config/db');
 
 router.use(authMiddleware);
 
@@ -136,13 +137,41 @@ router.get('/statistics', (req, res) => {
     // Hypothèse: 0.2kg CO2/km économisé par passager
     const estimatedCO2Saved = (stats.completed_bookings || 0) * 50 * 0.2; // 50km moyen
     
-    res.json({
-      success: true,
-      statistics: {
-        ...stats,
-        co2_saved_kg: Math.round(estimatedCO2Saved * 100) / 100,
-        estimated_savings: stats.estimated_savings || 0
+    // Récupérer les trajets réels du compte (exclure générés/virtuels)
+    const ridesSql = `SELECT r.id, r.driver_id, r.departure_station_id, r.arrival_station_id, r.departure_date, r.departure_time, r.available_seats, r.price_per_seat, r.status,
+                             ds.name as departure_station, arrival_s.name as arrival_station
+                      FROM rides r
+                      JOIN stations ds ON r.departure_station_id = ds.id
+                      JOIN stations arrival_s ON r.arrival_station_id = arrival_s.id
+                      WHERE r.driver_id = ?
+                      AND r.status IN ('active','pending','completed')
+                      ORDER BY r.departure_date DESC
+                      LIMIT 10`;
+
+    db.all(ridesSql, [userId], (ridesErr, myRides) => {
+      if (ridesErr) {
+        console.error('Erreur récupération my_rides pour dashboard:', ridesErr);
+        // Retourner quand même les statistiques
+        return res.json({
+          success: true,
+          statistics: {
+            ...stats,
+            co2_saved_kg: Math.round(estimatedCO2Saved * 100) / 100,
+            estimated_savings: stats.estimated_savings || 0
+          },
+          my_rides: []
+        });
       }
+
+      res.json({
+        success: true,
+        statistics: {
+          ...stats,
+          co2_saved_kg: Math.round(estimatedCO2Saved * 100) / 100,
+          estimated_savings: stats.estimated_savings || 0
+        },
+        my_rides: myRides || []
+      });
     });
   });
 });
@@ -152,14 +181,14 @@ router.get('/availability-alerts', (req, res) => {
   const userId = req.userId;
   
   const sql = `
-    SELECT r.*, 
-           ds.name as departure_station,
-           as.name as arrival_station,
-           fr.created_at as favorited_at
+        SELECT r.*, 
+          ds.name as departure_station,
+          arrival_s.name as arrival_station,
+          fr.created_at as favorited_at
     FROM favorite_rides fr
     JOIN rides r ON fr.ride_id = r.id
     JOIN stations ds ON r.departure_station_id = ds.id
-    JOIN stations as ON r.arrival_station_id = as.id
+    JOIN stations arrival_s ON r.arrival_station_id = arrival_s.id
     WHERE fr.user_id = ?
     AND r.status = 'active'
     AND r.available_seats > 0

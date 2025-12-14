@@ -211,7 +211,7 @@ const reviewController = {
 
       const sql = `
         SELECT r.id as ride_id, r.departure_date, r.arrival_date,
-               ds.name as departure_station, as.name as arrival_station,
+               ds.name as departure_station, stat_arr.name as arrival_station,
                u.id as other_user_id, u.first_name, u.last_name,
                CASE 
                  WHEN r.driver_id = ? THEN 'passenger'
@@ -219,7 +219,7 @@ const reviewController = {
                END as role_to_review
         FROM rides r
         JOIN stations ds ON r.departure_station_id = ds.id
-        JOIN stations as ON r.arrival_station_id = as.id
+        JOIN stations stat_arr ON r.arrival_station_id = stat_arr.id
         LEFT JOIN users u ON (r.driver_id = u.id OR u.id IN (
           SELECT passenger_id FROM bookings b 
           WHERE b.ride_id = r.id AND b.passenger_id != ?

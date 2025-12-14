@@ -105,12 +105,12 @@ const Reservation = {
                       r.departure_station_id, r.arrival_station_id, r.departure_date, r.departure_time,
                       r.driver_id, r.price_per_seat,
                       ds.name as departure_station_name,
-                      as.name as arrival_station_name,
+                      stat_arr.name as arrival_station_name,
                       u.first_name as driver_first_name, u.last_name as driver_last_name
                FROM bookings b
                JOIN rides r ON b.ride_id = r.id
                JOIN stations ds ON r.departure_station_id = ds.id
-               JOIN stations as ON r.arrival_station_id = as.id
+               JOIN stations stat_arr ON r.arrival_station_id = stat_arr.id
                JOIN users u ON r.driver_id = u.id
                WHERE b.passenger_id = ?`;
     

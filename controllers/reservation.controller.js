@@ -1,5 +1,6 @@
 const Reservation = require('../models/reservation.model');
 const Ride = require('../models/ride.model');
+const db = require('../config/db');
 
 const reservationController = {
   // Réserver un trajet

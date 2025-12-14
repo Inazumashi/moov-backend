@@ -1,4 +1,4 @@
-// controllers/ride.controller.js - VERSION CORRIGÉE
+// controllers/ride.controller.js - VERSION CORRIGÉE FINALE
 const db = require('../config/db');
 const Ride = require('../models/ride.model');
 const Station = require('../models/station.model');
@@ -163,10 +163,13 @@ const rideController = {
     }
   },
 
-  // RECHERCHE AVANCÉE
+  // RECHERCHE AVANCÉE - ✅ CORRECTION ICI
   search: async (req, res) => {
     try {
       const searchParams = req.query;
+
+      // Log pour déboguer
+      console.log('🔍 Paramètres de recherche reçus :', searchParams);
 
       // Valider les paramètres
       if (!searchParams.departure_station_id && !searchParams.arrival_station_id) {
@@ -183,6 +186,12 @@ const rideController = {
             success: false,
             message: 'Erreur lors de la recherche'
           });
+        }
+
+        // Log pour déboguer
+        console.log('📊 Résultats trouvés :', result.rides.length);
+        if (result.rides.length > 0) {
+          console.log('📋 Premier trajet :', result.rides[0]);
         }
 
         // Si on a des résultats, mettre à jour l'itinéraire populaire
@@ -342,13 +351,13 @@ const rideController = {
     }
   },
 
-  // TRAJETS DU CONDUCTEUR (C'EST ICI QUE J'AI FAIT LA CORRECTION)
+  // TRAJETS DU CONDUCTEUR - ✅ CORRECTION ALIAS "ars"
   myRides: async (req, res) => {
     try {
       const driverId = req.userId;
       const { status, page = 1, limit = 20 } = req.query;
 
-      // CORRECTION : Remplacement de "as" par "ars" pour l'alias de la table
+      // CORRECTION : Utilisation correcte de l'alias "ars" au lieu de "as"
       let sql = `SELECT r.*, 
                         ds.name as departure_station,
                         ars.name as arrival_station, 
