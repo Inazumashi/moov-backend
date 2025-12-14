@@ -5,7 +5,7 @@ const Station = require('../models/station.model');
 const Route = require('../models/route.model');
 
 const rideController = {
-  // CRÉER UN TRAJET AVEC AUTO-COMPLÉTION
+  // CRÉER UN TRAJET AVEC AUTO-COMPLÉTION ET AUTO-CONDUCTEUR
   create: async (req, res) => {
     try {
       const driverId = req.userId;
@@ -64,7 +64,7 @@ const rideController = {
             });
           }
 
-          // Vérifier que l'utilisateur est conducteur
+          // ⭐⭐ MODIFICATION IMPORTANTE : AUTO-MARQUER COMME CONDUCTEUR ⭐⭐
           const userSql = 'SELECT is_driver FROM users WHERE id = ?';
           db.get(userSql, [driverId], async (err, user) => {
             if (err || !user) {
@@ -74,58 +74,83 @@ const rideController = {
               });
             }
 
+            // Si l'utilisateur n'est pas encore conducteur, le devenir automatiquement
             if (!user.is_driver) {
-              return res.status(403).json({
-                success: false,
-                message: 'Vous devez être enregistré comme conducteur pour créer un trajet'
-              });
+              console.log(`🚗 Utilisateur ${driverId} devient conducteur automatiquement`);
+              
+              db.run('UPDATE users SET is_driver = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', 
+                [driverId], 
+                (updateErr) => {
+                  if (updateErr) {
+                    console.error('Erreur mise à jour conducteur:', updateErr);
+                    // On continue quand même avec la création du trajet
+                  } else {
+                    console.log(`✅ Utilisateur ${driverId} marqué comme conducteur`);
+                    
+                    // Mettre aussi has_car = 1 par défaut
+                    db.run('UPDATE users SET has_car = 1 WHERE id = ?', [driverId], (carErr) => {
+                      if (carErr) console.error('Erreur mise à jour voiture:', carErr);
+                    });
+                  }
+                  
+                  // Continuer avec la création du trajet
+                  _createRideAfterDriverCheck();
+                }
+              );
+            } else {
+              // Déjà conducteur, continuer directement
+              _createRideAfterDriverCheck();
             }
 
-            // Créer le trajet
-            const rideData = {
-              driver_id: driverId,
-              departure_station_id,
-              arrival_station_id,
-              departure_date,
-              departure_time,
-              arrival_date,
-              arrival_time,
-              available_seats: available_seats || 4,
-              price_per_seat: price_per_seat || 20.0,
-              recurrence: recurrence || 'none',
-              recurrence_days: recurrence_days || null,
-              recurrence_end_date: recurrence_end_date || null,
-              notes: notes || null
-            };
+            // Fonction pour créer le trajet après vérification du statut conducteur
+            function _createRideAfterDriverCheck() {
+              // Créer le trajet
+              const rideData = {
+                driver_id: driverId,
+                departure_station_id,
+                arrival_station_id,
+                departure_date,
+                departure_time,
+                arrival_date,
+                arrival_time,
+                available_seats: available_seats || 4,
+                price_per_seat: price_per_seat || 20.0,
+                recurrence: recurrence || 'none',
+                recurrence_days: recurrence_days || null,
+                recurrence_end_date: recurrence_end_date || null,
+                notes: notes || null
+              };
 
-            Ride.create(rideData, (err, newRide) => {
-              if (err) {
-                console.error('Erreur création trajet:', err);
-                return res.status(500).json({
-                  success: false,
-                  message: 'Erreur lors de la création du trajet'
-                });
-              }
-
-              // Mettre à jour l'itinéraire populaire
-              Route.updatePopularRoute(departure_station_id, arrival_station_id, () => {});
-
-              // Obtenir les détails complets du trajet créé
-              Ride.findById(newRide.id, (err, rideDetails) => {
+              Ride.create(rideData, (err, newRide) => {
                 if (err) {
-                  console.error('Erreur récupération détails:', err);
-                  // On retourne quand même le succès
+                  console.error('Erreur création trajet:', err);
+                  return res.status(500).json({
+                    success: false,
+                    message: 'Erreur lors de la création du trajet'
+                  });
                 }
 
-                res.status(201).json({
-                  success: true,
-                  message: recurrence === 'none' ? 
-                    'Trajet créé avec succès' : 
-                    'Trajet récurrent créé avec succès',
-                  ride: rideDetails || { id: newRide.id }
+                // Mettre à jour l'itinéraire populaire
+                Route.updatePopularRoute(departure_station_id, arrival_station_id, () => {});
+
+                // Obtenir les détails complets du trajet créé
+                Ride.findById(newRide.id, (err, rideDetails) => {
+                  if (err) {
+                    console.error('Erreur récupération détails:', err);
+                    // On retourne quand même le succès
+                  }
+
+                  res.status(201).json({
+                    success: true,
+                    message: recurrence === 'none' ? 
+                      'Trajet créé avec succès' : 
+                      'Trajet récurrent créé avec succès',
+                    ride: rideDetails || { id: newRide.id },
+                    user_became_driver: !user.is_driver // Indique si l'utilisateur vient de devenir conducteur
+                  });
                 });
               });
-            });
+            }
           });
         });
       });
@@ -317,20 +342,21 @@ const rideController = {
     }
   },
 
-  // TRAJETS DU CONDUCTEUR
+  // TRAJETS DU CONDUCTEUR (C'EST ICI QUE J'AI FAIT LA CORRECTION)
   myRides: async (req, res) => {
     try {
       const driverId = req.userId;
       const { status, page = 1, limit = 20 } = req.query;
 
+      // CORRECTION : Remplacement de "as" par "ars" pour l'alias de la table
       let sql = `SELECT r.*, 
                         ds.name as departure_station,
-                        as.name as arrival_station,
+                        ars.name as arrival_station, 
                         (SELECT COUNT(*) FROM bookings b 
                          WHERE b.ride_id = r.id AND b.status IN ('confirmed', 'completed')) as booked_seats
                  FROM rides r
                  JOIN stations ds ON r.departure_station_id = ds.id
-                 JOIN stations as ON r.arrival_station_id = as.id
+                 JOIN stations ars ON r.arrival_station_id = ars.id
                  WHERE r.driver_id = ?`;
       
       const params = [driverId];
@@ -372,7 +398,7 @@ const rideController = {
         message: 'Erreur serveur'
       });
     }
-  }, // <-- AJOUTE CETTE VIRGULE ICI !
+  },
 
   // Mettre à jour un trajet
   update: async (req, res) => {
@@ -583,6 +609,6 @@ const rideController = {
     }
   }
 
-}; // <-- FERMETURE CORRECTE DE L'OBJET
+};
 
 module.exports = rideController;

@@ -195,6 +195,9 @@ console.log('- POST /api/auth/login');
 console.log('- POST /api/auth/register');
 console.log('- GET  /api/auth/universities');
 console.log('- GET  /api/stations/popular');
+console.log('- POST /api/rides'); // <-- AJOUTE
+console.log('- GET  /api/rides/my-rides'); // <-- AJOUTE
+console.log('- GET  /api/rides/search'); // <-- AJOUTE
 
 // Démarrer le serveur
 const server = app.listen(PORT, HOST, () => {

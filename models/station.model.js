@@ -1,8 +1,8 @@
-// models/station.model.js
+// models/station.model.js - VERSION COMPLÈTE AMÉLIORÉE
 const db = require('../config/db');
 
 const Station = {
-  // Recherche avec auto-complétion
+  // Recherche avec auto-complétion - VERSION AMÉLIORÉE
   search: (query, limit = 10, userId = null, callback) => {
     let sql = `SELECT s.*, 
                       u.name as university_name,
@@ -18,6 +18,15 @@ const Station = {
     
     const params = [userId || 0, `%${query}%`, `%${query}%`, `%${query}%`];
     
+    // Amélioration : recherche par mots clés communs
+    const keywords = query.toLowerCase().split(' ');
+    keywords.forEach(keyword => {
+      if (keyword.length > 2) {
+        sql += ` OR LOWER(s.name) LIKE ? OR LOWER(s.city) LIKE ?`;
+        params.push(`%${keyword}%`, `%${keyword}%`);
+      }
+    });
+    
     // Si l'utilisateur est connecté, on peut filtrer par ses universités favorites
     if (userId) {
       sql += ` OR s.university_id IN (
@@ -29,27 +38,53 @@ const Station = {
     sql += ` ORDER BY 
                CASE 
                  WHEN s.name LIKE ? THEN 1
-                 WHEN s.city LIKE ? THEN 2
-                 WHEN s.address LIKE ? THEN 3
-                 ELSE 4
+                 WHEN LOWER(s.name) LIKE LOWER(?) THEN 2
+                 WHEN s.city LIKE ? THEN 3
+                 WHEN s.address LIKE ? THEN 4
+                 ELSE 5
                END,
                s.search_count DESC,
-               ride_count DESC
+               ride_count DESC,
+               s.name ASC
              LIMIT ?`;
     
-    params.push(`${query}%`, `${query}%`, `${query}%`, limit);
+    params.push(`${query}%`, `${query}%`, `${query}%`, `${query}%`, limit);
     
     db.all(sql, params, (err, stations) => {
       if (err) return callback(err);
       
-      // Incrémenter le compteur de recherche pour les stations trouvées
+      // Formater les résultats
+      const formattedStations = stations.map(station => ({
+        ...station,
+        display_name: `${station.name} - ${station.city}` +
+          (station.university_name ? ` (${station.university_name})` : '') +
+          (station.type === 'university' ? ' 🎓' : 
+           station.type === 'train_station' ? ' 🚂' : 
+           station.type === 'bus_station' ? ' 🚌' : ' 📍')
+      }));
+      
+      // Incrémenter le compteur de recherche
       stations.forEach(station => {
         db.run(`UPDATE stations SET search_count = search_count + 1 WHERE id = ?`, 
           [station.id]);
       });
       
-      callback(null, stations);
+      callback(null, formattedStations);
     });
+  },
+
+  // NOUVELLE MÉTHODE : Recherche par type
+  searchByType: (query, type, limit = 10, callback) => {
+    const sql = `SELECT s.*, u.name as university_name
+                 FROM stations s
+                 LEFT JOIN universities u ON s.university_id = u.id
+                 WHERE s.is_active = 1 
+                 AND s.type = ?
+                 AND (s.name LIKE ? OR s.city LIKE ?)
+                 ORDER BY s.search_count DESC, s.name
+                 LIMIT ?`;
+    
+    db.all(sql, [type, `%${query}%`, `%${query}%`, limit], callback);
   },
 
   // Recherche géographique (stations proches)

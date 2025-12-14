@@ -14,9 +14,9 @@ db.serialize(() => {
     university TEXT NOT NULL,
     profile_type TEXT CHECK(profile_type IN ('student', 'staff', 'professor')) DEFAULT 'student',
     student_id TEXT,
-    is_verified INTEGER DEFAULT 0,  -- INTEGER
-    is_driver INTEGER DEFAULT 0,    -- INTEGER
-    has_car INTEGER DEFAULT 0,      -- INTEGER
+    is_verified INTEGER DEFAULT 0,
+    is_driver INTEGER DEFAULT 0,
+    has_car INTEGER DEFAULT 0,
     car_model TEXT,
     car_seats INTEGER,
     rating REAL DEFAULT 5.0,
@@ -53,7 +53,6 @@ db.serialize(() => {
     if (err) console.error('❌ Erreur universities:', err.message);
     else {
       console.log('✅ Table "universities" prête');
-      // Insertion des données (optionnel ici, peut être fait à part)
       const universities = [
         ['UM6P - Université Mohammed VI Polytechnique', 'um6p.ma', 'Benguerir'],
         ['UCA - Université Cadi Ayyad', 'uca.ma', 'Marrakech'],
@@ -67,7 +66,7 @@ db.serialize(() => {
     }
   });
 
-  // 4. Table stations (Pas besoin de timeout grâce à serialize)
+  // 4. Table stations
   db.run(`CREATE TABLE IF NOT EXISTS stations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -108,6 +107,7 @@ db.serialize(() => {
     recurrence_days TEXT,
     recurrence_end_date DATETIME,
     notes TEXT,
+    vehicle_details TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (driver_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -238,7 +238,7 @@ db.serialize(() => {
     else console.log('✅ Table "favorite_rides" prête');
   });
 
-  // 13. Table notifications (CORRIGÉ)
+  // 13. Table notifications
   db.run(`CREATE TABLE IF NOT EXISTS notifications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -252,66 +252,74 @@ db.serialize(() => {
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   )`, (err) => {
     if (err) console.error('❌ Erreur notifications:', err.message);
-    else console.log('✅ Table "notifications" prête');
-
-    // --- DEBUT DE LA LOGIQUE D'INSERTION SÉQUENTIELLE ---
-
-    console.log("🏁 Initialisation terminée, démarrage des insertions de données de base...");
-    db.run('BEGIN TRANSACTION');
-
-    // --- 1. INSERTION DES STATIONS (Déplacée et sécurisée) ---
-    const stations = [
-        // university_id 1 = UM6P, 2 = UCA, 3 = UIR, etc.
+    else {
+      console.log('✅ Table "notifications" prête');
+      console.log("🏁 Initialisation terminée, démarrage des insertions de données de base...");
+      
+      // ✅ INSERTION DES STATIONS (Sans transaction imbriquée)
+      const stations = [
+        // UM6P - Benguerir (university_id = 1)
         ['UM6P - Entrée Principale', 'university', 'Benguerir', 'Lotissement 2070', 32.230, -7.933, 1],
         ['UM6P - Résidences', 'university', 'Benguerir', 'Résidences Green City', 32.232, -7.930, 1],
-        ['Gare Benguerir', 'train_station', 'Benguerir', 'Gare ONCF', 32.245, -7.950, 1],
+        ['Gare Benguerir', 'train_station', 'Benguerir', 'Gare ONCF', 32.245, -7.950, null],
+        
+        // UCA - Marrakech (university_id = 2)
         ['UCA - Faculté des Sciences Semlalia', 'university', 'Marrakech', 'Avenue Prince Moulay Abdellah', 31.641, -8.010, 2],
-        ['Gare Marrakech', 'train_station', 'Marrakech', 'Avenue Hassan II', 31.633, -8.008, 2],
+        ['Gare Marrakech', 'train_station', 'Marrakech', 'Avenue Hassan II', 31.633, -8.008, null],
+        
+        // UIR - Rabat (university_id = 3)
         ['UIR - Campus Technopolis', 'university', 'Rabat', 'Technopolis Rabat-Shore', 33.992, -6.792, 3],
+        
+        // ENSIAS - Rabat (university_id = 4)
+        ['ENSIAS', 'university', 'Rabat', 'Avenue Mohamed Ben Abdellah Regragui', 33.981, -6.872, 4],
+        
+        // EMI - Rabat (university_id = 5)
+        ['EMI', 'university', 'Rabat', 'Avenue des Nations Unies', 33.970, -6.860, 5],
+        
+        // Stations générales
         ['Gare Casa-Voyageurs', 'train_station', 'Casablanca', 'Place de la Gare', 33.590, -7.583, null],
         ['Aéroport Mohammed V', 'bus_station', 'Casablanca', 'Aéroport Mohammed V', 33.367, -7.590, null],
-    ];
-    
-    // On utilise un seul db.run pour la transaction des stations
-    const stationPlaceholders = stations.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ');
-    const stationValues = stations.flat();
+      ];
+      
+      const stationPlaceholders = stations.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ');
+      const stationValues = stations.flat();
 
-    db.run(`INSERT OR IGNORE INTO stations (name, type, city, address, latitude, longitude, university_id) VALUES ${stationPlaceholders}`, stationValues, (err) => {
-        if (err) {
+      db.run(`INSERT OR IGNORE INTO stations (name, type, city, address, latitude, longitude, university_id) 
+              VALUES ${stationPlaceholders}`, 
+        stationValues, 
+        (err) => {
+          if (err) {
             console.error('❌ Erreur insertion stations:', err.message);
-        } else {
+          } else {
             console.log(`✅ ${stations.length} stations insérées !`);
-        }
-
-        // --- 2. INSERTION DE L'UTILISATEUR DE TEST (Dans le callback) ---
-        const hashedPassword = '92b45288289a0cc87920155b9cc815e98544e3391740924976451e6005d54a2a'; // Hash de 'testpassword'
-        
-        db.run(`INSERT OR IGNORE INTO users 
-          (email, password, first_name, last_name, university, profile_type, is_verified) 
-          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [
-            'test@um6p.ma', 
-            hashedPassword, 
-            'Test', 
-            'User', 
-            'UM6P - Université Mohammed VI Polytechnique', 
-            'student', 
-            1 // Directement vérifié pour le test
-          ], 
-          (err) => {
-            if (err) {
-              console.error('❌ Erreur insertion utilisateur test:', err.message);
-            } else {
-              console.log('✅ Utilisateur test inséré (test@um6p.ma / testpassword)');
-            }
-            // --- 3. COMMIT FINAL (Exécuté en dernier) ---
-            db.run('COMMIT', () => {
-                console.log("✨ Transaction DB terminée. Base de données prête.");
-            });
           }
-        );
-    });
-  });
 
-  console.log("🏁 Initialisation terminée, tables en cours de création...");
+          // ✅ INSERTION DE L'UTILISATEUR DE TEST
+          const hashedPassword = '92b45288289a0cc87920155b9cc815e98544e3391740924976451e6005d54a2a';
+          
+          db.run(`INSERT OR IGNORE INTO users 
+            (email, password, first_name, last_name, university, profile_type, is_verified) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [
+              'test@um6p.ma', 
+              hashedPassword, 
+              'Test', 
+              'User', 
+              'UM6P - Université Mohammed VI Polytechnique', 
+              'student', 
+              1
+            ], 
+            (err) => {
+              if (err) {
+                console.error('❌ Erreur insertion utilisateur test:', err.message);
+              } else {
+                console.log('✅ Utilisateur test inséré (test@um6p.ma / testpassword)');
+              }
+              console.log("✨ Base de données prête.");
+            }
+          );
+        }
+      );
+    }
+  });
 });

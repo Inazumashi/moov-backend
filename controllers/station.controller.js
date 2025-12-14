@@ -1,6 +1,5 @@
-// controllers/station.controller.js - AJOUTE CETTE LIGNE
-const db = require('../config/db');
 // controllers/station.controller.js
+const db = require('../config/db');
 const Station = require('../models/station.model');
 const Favorite = require('../models/favorite.model');
 const Route = require('../models/route.model');
@@ -28,18 +27,31 @@ const stationController = {
           });
         }
 
-        // Formater la réponse pour l'auto-complétion
-        const suggestions = stations.map(station => ({
-          id: station.id,
-          name: station.name,
-          city: station.city,
-          address: station.address,
-          type: station.type,
-          university_name: station.university_name,
-          is_favorite: station.is_favorite > 0,
-          ride_count: station.ride_count,
-          label: `${station.name}, ${station.city}${station.university_name ? ` (${station.university_name})` : ''}`
-        }));
+        // ✅ CORRECTION DU LABEL : Format logique selon le type de station
+        const suggestions = stations.map(station => {
+          let label;
+          
+          // Si c'est une station universitaire, afficher le nom de l'université
+          if (station.type === 'university' && station.university_name) {
+            label = `${station.name} (${station.university_name})`;
+          }
+          // Sinon, afficher nom + ville
+          else {
+            label = `${station.name}, ${station.city}`;
+          }
+
+          return {
+            id: station.id,
+            name: station.name,
+            city: station.city,
+            address: station.address,
+            type: station.type,
+            university_name: station.university_name,
+            is_favorite: station.is_favorite > 0,
+            ride_count: station.ride_count,
+            label: label
+          };
+        });
 
         res.json({
           success: true,
