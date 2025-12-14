@@ -5,6 +5,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const path = require('path');
+const db = require('./config/db');
 
 // IMPORTANT: Initialiser la base de données
 require('./db/init');
@@ -200,6 +201,19 @@ console.log('- GET  /api/rides/my-rides'); // <-- AJOUTE
 console.log('- GET  /api/rides/search'); // <-- AJOUTE
 
 // Démarrer le serveur
+// Nettoyage périodique des codes de vérification expirés
+const CLEANUP_INTERVAL_MS = process.env.CLEANUP_EXPIRED_CODES_INTERVAL_MS ? parseInt(process.env.CLEANUP_EXPIRED_CODES_INTERVAL_MS, 10) : 10 * 60 * 1000;
+function cleanupExpiredVerificationCodes() {
+  const sql = "DELETE FROM verification_codes WHERE expires_at <= datetime('now')";
+  db.run(sql, function(err) {
+    if (err) console.error('Erreur suppression codes expirés:', err.message);
+    else if (this.changes && this.changes > 0) console.log(`✅ Codes expirés supprimés: ${this.changes}`);
+  });
+}
+// Exécuter immédiatement au démarrage puis toutes les X minutes
+cleanupExpiredVerificationCodes();
+setInterval(cleanupExpiredVerificationCodes, CLEANUP_INTERVAL_MS);
+
 const server = app.listen(PORT, HOST, () => {
   console.log('\n🚀 ==========================================');
   console.log('🚀 Serveur Moov API démarré avec succès!');

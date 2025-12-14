@@ -19,13 +19,13 @@ const FavoriteRide = {
                         r.departure_station_id, r.arrival_station_id, r.departure_date, r.departure_time,
                         r.available_seats, r.price_per_seat, r.status,
                         ds.name as departure_station,
-                        as.name as arrival_station,
+                        arrival_s.name as arrival_station,
                         u.first_name as driver_first_name, u.last_name as driver_last_name,
                         u.rating as driver_rating
                  FROM favorite_rides fr
                  JOIN rides r ON fr.ride_id = r.id
                  JOIN stations ds ON r.departure_station_id = ds.id
-                 JOIN stations as ON r.arrival_station_id = as.id
+                 JOIN stations arrival_s ON r.arrival_station_id = arrival_s.id
                  JOIN users u ON r.driver_id = u.id
                  WHERE fr.user_id = ?
                  ORDER BY fr.created_at DESC`;

@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const bcrypt = require('bcryptjs');
 
 db.serialize(() => {
   console.log("🛠️ Démarrage de l'initialisation de la base de données...");
@@ -295,8 +296,9 @@ db.serialize(() => {
           }
 
           // ✅ INSERTION DE L'UTILISATEUR DE TEST
-          const hashedPassword = '92b45288289a0cc87920155b9cc815e98544e3391740924976451e6005d54a2a';
-          
+          // Hasher le mot de passe de test correctement avec bcrypt
+          const hashedPassword = bcrypt.hashSync('testpassword', 12);
+
           db.run(`INSERT OR IGNORE INTO users 
             (email, password, first_name, last_name, university, profile_type, is_verified) 
             VALUES (?, ?, ?, ?, ?, ?, ?)`,

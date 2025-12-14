@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const reservationController = require('../controllers/reservation.controller');
 const authMiddleware = require('../middleware/auth.middleware');
+const db = require('../config/db');
 
 router.use(authMiddleware);
 
@@ -9,6 +10,8 @@ router.use(authMiddleware);
 router.post('/', reservationController.create);
 router.delete('/:id', reservationController.cancel);
 router.get('/my-reservations', reservationController.myReservations);
+// Alias court pour compatibilité client
+router.get('/my', reservationController.myReservations);
 router.get('/ride/:rideId', reservationController.rideReservations);
 
 // Statistiques (pour l'écran d'accueil)

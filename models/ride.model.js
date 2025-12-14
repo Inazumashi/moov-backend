@@ -313,7 +313,7 @@ const Ride = {
     let sql = `SELECT r.*, 
                       d.first_name, d.last_name, d.rating as driver_rating,
                       ds.name as departure_station,
-                      as.name as arrival_station
+                      stat_arr.name as arrival_station
                FROM rides r
                JOIN users d ON r.driver_id = d.id
                JOIN stations ds ON r.departure_station_id = ds.id

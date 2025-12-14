@@ -59,12 +59,12 @@ const Review = {
                       ride.departure_station_id,
                       ride.arrival_station_id,
                       ds.name as departure_station,
-                      as.name as arrival_station
+                      stat_arr.name as arrival_station
                FROM reviews r
                JOIN users reviewer ON r.reviewer_id = reviewer.id
                JOIN rides ride ON r.ride_id = ride.id
                JOIN stations ds ON ride.departure_station_id = ds.id
-               JOIN stations as ON ride.arrival_station_id = as.id
+               JOIN stations stat_arr ON ride.arrival_station_id = stat_arr.id
                WHERE r.reviewed_id = ?`;
     
     const params = [userId];

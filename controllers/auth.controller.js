@@ -18,7 +18,8 @@ const authController = {
   // INSCRIPTION ÉTAPE 1: Vérification email universitaire
   checkUniversityEmail: async (req, res) => {
     try {
-      const { email } = req.body;
+      let { email } = req.body;
+      if (typeof email === 'string') email = email.trim();
 
       if (!email) {
         return res.status(400).json({
@@ -27,36 +28,22 @@ const authController = {
         });
       }
 
-      // Vérifier si email universitaire valide
-      User.isValidUniversityEmail(email, async (err, isValid) => {
-        if (err) {
-          return res.status(500).json({
-            success: false,
-            message: 'Erreur serveur'
-          });
+      // Si l'email existe déjà en base, indiquez-le (utile pour le flux "J'ai déjà un compte")
+      User.findByEmail(email, (err, existingUser) => {
+        if (err) return res.status(500).json({ success: false, message: 'Erreur serveur' });
+        if (existingUser) {
+          // Retour normalisé: frontend peut décider d'afficher l'écran de connexion
+          return res.json({ success: true, exists: true, message: 'Compte existant' });
         }
 
-        if (!isValid) {
-          return res.status(400).json({
-            success: false,
-            message: 'Email universitaire invalide. Utilisez un email de votre université.'
-          });
-        }
-
-        // Vérifier si email existe déjà
-        User.findByEmail(email, (err, existingUser) => {
+        // Vérifier si email universitaire valide (pour les nouvelles inscriptions)
+        User.isValidUniversityEmail(email, async (err, isValid) => {
           if (err) {
-            return res.status(500).json({
-              success: false,
-              message: 'Erreur serveur'
-            });
+            return res.status(500).json({ success: false, message: 'Erreur serveur' });
           }
 
-          if (existingUser) {
-            return res.status(409).json({
-              success: false,
-              message: 'Cet email est déjà utilisé'
-            });
+          if (!isValid) {
+            return res.status(400).json({ success: false, message: 'Email universitaire invalide. Utilisez un email de votre université.' });
           }
 
           // Générer code de vérification
@@ -66,10 +53,7 @@ const authController = {
           // Sauvegarder code
           User.saveVerificationCode(email, verificationCode, expiresAt, async (err) => {
             if (err) {
-              return res.status(500).json({
-                success: false,
-                message: 'Erreur lors de la génération du code'
-              });
+              return res.status(500).json({ success: false, message: 'Erreur lors de la génération du code' });
             }
 
             // Envoyer email
@@ -93,19 +77,10 @@ const authController = {
                 `
               });
 
-              res.json({
-                success: true,
-                message: 'Code de vérification envoyé par email',
-                email: email,
-                // Pour le développement seulement
-                debug_code: process.env.NODE_ENV === 'development' ? verificationCode : undefined
-              });
+              res.json({ success: true, message: 'Code de vérification envoyé par email', email, debug_code: process.env.NODE_ENV === 'development' ? verificationCode : undefined });
             } catch (emailError) {
               console.error('Erreur envoi email:', emailError);
-              res.status(500).json({
-                success: false,
-                message: 'Erreur lors de l\'envoi de l\'email'
-              });
+              res.status(500).json({ success: false, message: 'Erreur lors de l\'envoi de l\'email' });
             }
           });
         });
@@ -116,6 +91,26 @@ const authController = {
         success: false,
         message: 'Erreur serveur'
       });
+    }
+  },
+
+  // Vérifier si un email existe déjà (endpoint explicite pour le flux "J'ai déjà un compte")
+  checkEmailExists: async (req, res) => {
+    try {
+      let { email } = req.body;
+      if (!email) return res.status(400).json({ success: false, message: 'Email requis' });
+      if (typeof email === 'string') email = email.trim();
+
+      User.findByEmail(email, (err, user) => {
+        if (err) return res.status(500).json({ success: false, message: 'Erreur serveur' });
+        if (!user) return res.json({ success: true, exists: false });
+        // Ne pas renvoyer le mot de passe
+        const { password, ...userSafe } = user;
+        return res.json({ success: true, exists: true, user: userSafe });
+      });
+    } catch (error) {
+      console.error('Erreur checkEmailExists:', error);
+      res.status(500).json({ success: false, message: 'Erreur serveur' });
     }
   },
 
@@ -147,16 +142,24 @@ const authController = {
           });
         }
 
-        // Supprimer le code utilisé
-        User.deleteVerificationCode(verification.id, (err) => {
-          if (err) console.error('Erreur suppression code:', err);
-        });
+        // Marquer l'utilisateur comme vérifié
+        User.verifyUserByEmail(email, (verErr) => {
+          if (verErr) {
+            console.error('Erreur mise à jour is_verified:', verErr);
+            return res.status(500).json({ success: false, message: 'Erreur serveur' });
+          }
 
-        res.json({
-          success: true,
-          message: 'Email vérifié avec succès',
-          email: email,
-          verified: true
+          // Supprimer le code utilisé
+          User.deleteVerificationCode(verification.id, (delErr) => {
+            if (delErr) console.error('Erreur suppression code:', delErr);
+          });
+
+          res.json({
+            success: true,
+            message: 'Email vérifié avec succès',
+            email: email,
+            verified: true
+          });
         });
       });
     } catch (error) {
