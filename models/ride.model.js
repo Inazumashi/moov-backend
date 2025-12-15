@@ -18,8 +18,8 @@ const Ride = {
                  (driver_id, departure_station_id, arrival_station_id, 
                   departure_date, departure_time, arrival_date, arrival_time,
                   available_seats, price_per_seat, recurrence, recurrence_days, 
-                  recurrence_end_date, notes) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+                  recurrence_end_date, notes, status) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`;
     
     const departureDateTime = `${departure_date} ${departure_time}`;
     const arrivalDateTime = arrival_date && arrival_time 
