@@ -2,6 +2,19 @@
 const db = require('../config/db');
 
 const Station = {
+  // Helper: dédupliquer une liste de stations (normalise name|city|address)
+  _dedupeStations: (stations) => {
+    const seen = new Map();
+    const unique = [];
+    (stations || []).forEach(s => {
+      const key = `${(s.name||'').trim().toLowerCase()}|${(s.city||'').trim().toLowerCase()}|${(s.address||'').trim().toLowerCase()}`;
+      if (!seen.has(key)) {
+        seen.set(key, true);
+        unique.push(s);
+      }
+    });
+    return unique;
+  },
   // Recherche avec auto-complétion - VERSION AMÉLIORÉE
   search: (query, limit = 10, userId = null, callback) => {
     let sql = `SELECT s.*, 
@@ -52,24 +65,22 @@ const Station = {
     
     db.all(sql, params, (err, stations) => {
       if (err) return callback(err);
-      
-      // Formater les résultats
-      const formattedStations = stations.map(station => ({
-        ...station,
-        display_name: `${station.name} - ${station.city}` +
-          (station.university_name ? ` (${station.university_name})` : '') +
-          (station.type === 'university' ? ' 🎓' : 
-           station.type === 'train_station' ? ' 🚂' : 
-           station.type === 'bus_station' ? ' 🚌' : ' 📍')
-      }));
-      
-      // Incrémenter le compteur de recherche
-      stations.forEach(station => {
-        db.run(`UPDATE stations SET search_count = search_count + 1 WHERE id = ?`, 
-          [station.id]);
+
+      // Dé-duplication: éviter d'afficher plusieurs fois la même station
+      // sur l'auto-complétion. On considère comme doublon les lignes qui
+      // ont le même `name + city + address` (normalisés).
+      const seen = new Map();
+      const unique = [];
+
+      (stations || []).forEach(s => {
+        const key = `${(s.name||'').trim().toLowerCase()}|${(s.city||'').trim().toLowerCase()}|${(s.address||'').trim().toLowerCase()}`;
+        if (!seen.has(key)) {
+          seen.set(key, true);
+          unique.push(s);
+        }
       });
-      
-      callback(null, formattedStations);
+
+      callback(null, unique);
     });
   },
 
@@ -84,7 +95,10 @@ const Station = {
                  ORDER BY s.search_count DESC, s.name
                  LIMIT ?`;
     
-    db.all(sql, [type, `%${query}%`, `%${query}%`, limit], callback);
+    db.all(sql, [type, `%${query}%`, `%${query}%`, limit], (err, stations) => {
+      if (err) return callback(err);
+      callback(null, Station._dedupeStations(stations));
+    });
   },
 
   // Recherche géographique (stations proches)
@@ -121,7 +135,10 @@ const Station = {
                      ELSE 4
                    END,
                    s.name`;
-    db.all(sql, [universityId], callback);
+    db.all(sql, [universityId], (err, stations) => {
+      if (err) return callback(err);
+      callback(null, Station._dedupeStations(stations));
+    });
   },
 
   // Obtenir toutes les stations d'une ville
@@ -132,7 +149,10 @@ const Station = {
                  WHERE s.city LIKE ? AND s.is_active = 1
                  ORDER BY s.search_count DESC, s.name
                  LIMIT 50`;
-    db.all(sql, [`%${city}%`], callback);
+    db.all(sql, [`%${city}%`], (err, stations) => {
+      if (err) return callback(err);
+      callback(null, Station._dedupeStations(stations));
+    });
   },
 
   // Créer une station
@@ -167,7 +187,10 @@ const Station = {
                  GROUP BY s.id
                  ORDER BY s.search_count DESC, ride_count DESC
                  LIMIT ?`;
-    db.all(sql, [limit], callback);
+    db.all(sql, [limit], (err, stations) => {
+      if (err) return callback(err);
+      callback(null, Station._dedupeStations(stations));
+    });
   },
 
   // Stations récentes (pour l'historique)

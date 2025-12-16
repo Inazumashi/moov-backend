@@ -376,15 +376,17 @@ const rideController = {
       const { status, page = 1, limit = 20 } = req.query;
 
       // CORRECTION : Utilisation correcte de l'alias "ars" au lieu de "as"
-      let sql = `SELECT r.*, 
-                        ds.name as departure_station,
-                        ars.name as arrival_station, 
-                        (SELECT COUNT(*) FROM bookings b 
-                         WHERE b.ride_id = r.id AND b.status IN ('confirmed', 'completed')) as booked_seats
-                 FROM rides r
-                 JOIN stations ds ON r.departure_station_id = ds.id
-                 JOIN stations ars ON r.arrival_station_id = ars.id
-                 WHERE r.driver_id = ?`;
+            let sql = `SELECT r.*, 
+            ds.name as departure_station,
+            ars.name as arrival_station, 
+            (SELECT COUNT(*) FROM bookings b 
+             WHERE b.ride_id = r.id AND b.status IN ('confirmed', 'completed')) as booked_seats,
+            (SELECT COUNT(*) FROM bookings b2 
+             WHERE b2.ride_id = r.id AND b2.status IN ('pending', 'confirmed')) as active_bookings
+           FROM rides r
+           JOIN stations ds ON r.departure_station_id = ds.id
+           JOIN stations ars ON r.arrival_station_id = ars.id
+           WHERE r.driver_id = ?`;
       
       const params = [driverId];
       
@@ -408,13 +410,19 @@ const rideController = {
           });
         }
 
+        // Ajouter flag can_delete = true si pas de réservations actives
+        const mapped = (rides || []).map(r => ({
+          ...r,
+          can_delete: !(r.active_bookings && r.active_bookings > 0)
+        }));
+
         res.json({
           success: true,
-          rides,
+          rides: mapped,
           pagination: {
             page: parseInt(page),
             limit: parseInt(limit),
-            count: rides.length
+            count: mapped.length
           }
         });
       });
@@ -573,6 +581,48 @@ const rideController = {
         success: false,
         message: 'Erreur serveur'
       });
+    }
+  },
+
+  // Supprimer définitivement un trajet (seulement si aucun booking actif)
+  remove: async (req, res) => {
+    try {
+      const userId = req.userId;
+      const rideId = req.params.id;
+
+      // Vérifier que l'utilisateur est le conducteur
+      const checkSql = `SELECT id FROM rides WHERE id = ? AND driver_id = ?`;
+      db.get(checkSql, [rideId, userId], (err, ride) => {
+        if (err || !ride) {
+          return res.status(403).json({
+            success: false,
+            message: 'Trajet non trouvé ou vous n\'êtes pas le conducteur'
+          });
+        }
+
+        // Vérifier qu'il n'y a pas de réservations actives
+        const bookingsSql = `SELECT COUNT(*) as count FROM bookings WHERE ride_id = ? AND status IN ('pending','confirmed')`;
+        db.get(bookingsSql, [rideId], (err, result) => {
+          if (err) return res.status(500).json({ success: false, message: 'Erreur serveur' });
+
+          if (result.count > 0) {
+            return res.status(400).json({ success: false, message: 'Impossible de supprimer un trajet avec des réservations actives' });
+          }
+
+          // Supprimer définitivement
+          db.run(`DELETE FROM rides WHERE id = ?`, [rideId], function(err) {
+            if (err) {
+              console.error('Erreur suppression trajet:', err);
+              return res.status(500).json({ success: false, message: 'Erreur lors de la suppression' });
+            }
+
+            res.json({ success: true, message: 'Trajet supprimé avec succès' });
+          });
+        });
+      });
+    } catch (error) {
+      console.error('Erreur suppression trajet:', error);
+      res.status(500).json({ success: false, message: 'Erreur serveur' });
     }
   },
 

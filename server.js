@@ -7,6 +7,16 @@ const morgan = require('morgan');
 const path = require('path');
 const db = require('./config/db');
 
+// Global error handlers to help debug DB statement errors
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  console.error('Last SQL:', db._lastSql, 'Last params:', db._lastParams);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
+  console.error('Last SQL:', db._lastSql, 'Last params:', db._lastParams);
+});
+
 // IMPORTANT: Initialiser la base de données
 require('./db/init');
 

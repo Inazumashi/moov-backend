@@ -27,6 +27,9 @@ router.put('/:id', rideController.update);
 // ✅ SUPPRESSION DE TRAJET (ANNULATION)
 router.delete('/:id', rideController.cancel);
 
+// ✅ SUPPRESSION DÉFINITIVE (SI AUCUNE RÉSERVATION ACTIVE)
+router.delete('/:id/remove', rideController.remove);
+
 // ✅ MARQUER TRAJET COMME COMPLÉTÉ
 router.patch('/:id/complete', rideController.complete);
 

@@ -27,31 +27,17 @@ const stationController = {
           });
         }
 
-        // ✅ CORRECTION DU LABEL : Format logique selon le type de station
-        const suggestions = stations.map(station => {
-          let label;
-          
-          // Si c'est une station universitaire, afficher le nom de l'université
-          if (station.type === 'university' && station.university_name) {
-            label = `${station.name} (${station.university_name})`;
-          }
-          // Sinon, afficher nom + ville
-          else {
-            label = `${station.name}, ${station.city}`;
-          }
-
-          return {
-            id: station.id,
-            name: station.name,
-            city: station.city,
-            address: station.address,
-            type: station.type,
-            university_name: station.university_name,
-            is_favorite: station.is_favorite > 0,
-            ride_count: station.ride_count,
-            label: label
-          };
-        });
+        // Retourner les stations telles qu'elles sont en base (sans concaténation)
+        const suggestions = stations.map(station => ({
+          id: station.id,
+          name: station.name,
+          city: station.city,
+          address: station.address,
+          type: station.type,
+          university_name: station.university_name,
+          is_favorite: station.is_favorite > 0,
+          ride_count: station.ride_count
+        }));
 
         res.json({
           success: true,

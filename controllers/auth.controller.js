@@ -212,6 +212,15 @@ register: async (req, res) => {
         });
       }
 
+      // Validation de la complexité du mot de passe
+      const pwdRegex = /(?=^.{8,}$)(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).*/;
+      if (!pwdRegex.test(password)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Le mot de passe doit faire au moins 8 caractères et contenir une majuscule, un chiffre et un symbole'
+        });
+      }
+
       // Hacher mot de passe
       const hashedPassword = await bcrypt.hash(password, 12);
 

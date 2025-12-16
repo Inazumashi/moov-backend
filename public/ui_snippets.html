@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>UI snippets</title>
+  <style>
+    .btn-delete { background:#c62828;color:white;padding:8px 12px;border-radius:6px;border:none;cursor:pointer }
+    .pw-toggle { margin-left:8px; cursor:pointer }
+  </style>
+</head>
+<body>
+  <h3>Password field with visibility toggle</h3>
+  <label>
+    Mot de passe:
+    <input id="pw" type="password" />
+    <button id="togglePw" class="pw-toggle">Voir</button>
+  </label>
+
+  <h3>Example Delete Ride button (calls API)</h3>
+  <p>Replace <code>RIDE_ID</code> and include a valid `Authorization: Bearer &lt;token&gt;` header.</p>
+  <button id="deleteRide" class="btn-delete">Supprimer le trajet</button>
+
+  <script>
+    document.getElementById('togglePw').addEventListener('click', (e) => {
+      e.preventDefault();
+      const pw = document.getElementById('pw');
+      if (pw.type === 'password') {
+        pw.type = 'text';
+        e.target.textContent = 'Cacher';
+      } else {
+        pw.type = 'password';
+        e.target.textContent = 'Voir';
+      }
+    });
+
+    document.getElementById('deleteRide').addEventListener('click', async () => {
+      const rideId = prompt('ID du trajet à supprimer (ex: 3)');
+      if (!rideId) return;
+
+      const token = prompt('Token (Bearer) pour l\'authentification');
+      if (!token) return alert('Token requis');
+
+      try {
+        const res = await fetch(`/api/rides/${rideId}/remove`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        const data = await res.json();
+        alert(JSON.stringify(data));
+      } catch (err) {
+        alert('Erreur lors de la requête: ' + err.message);
+      }
+    });
+  </script>
+</body>
+</html>

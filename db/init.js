@@ -188,9 +188,20 @@ db.serialize(() => {
     if (err) console.error('❌ Erreur bookings:', err.message);
     else {
       console.log('✅ Table "bookings" prête');
-      db.run(`CREATE INDEX IF NOT EXISTS idx_bookings_passenger ON bookings(passenger_id, status)`);
-      db.run(`CREATE INDEX IF NOT EXISTS idx_bookings_ride ON bookings(ride_id, status)`);
-      db.run(`CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status)`);
+      // Create indexes only if the corresponding columns exist (safe for older DBs)
+      db.all(`PRAGMA table_info(bookings)`, (prErr, cols) => {
+        if (prErr) return console.error('Erreur vérif colonnes bookings:', prErr.message);
+        const names = (cols || []).map(c => c.name);
+        if (names.includes('passenger_id')) {
+          db.run(`CREATE INDEX IF NOT EXISTS idx_bookings_passenger ON bookings(passenger_id, status)`);
+        }
+        if (names.includes('ride_id')) {
+          db.run(`CREATE INDEX IF NOT EXISTS idx_bookings_ride ON bookings(ride_id, status)`);
+        }
+        if (names.includes('status')) {
+          db.run(`CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status)`);
+        }
+      });
     }
   });
 
@@ -213,9 +224,14 @@ db.serialize(() => {
     if (err) console.error('❌ Erreur ratings:', err.message);
     else {
       console.log('✅ Table "ratings" prête');
-      db.run(`CREATE INDEX IF NOT EXISTS idx_ratings_driver ON ratings(driver_id)`);
-      db.run(`CREATE INDEX IF NOT EXISTS idx_ratings_passenger ON ratings(passenger_id)`);
-      db.run(`CREATE INDEX IF NOT EXISTS idx_ratings_booking ON ratings(booking_id)`);
+      // Create ratings indexes only if columns exist
+      db.all(`PRAGMA table_info(ratings)`, (prErr, cols) => {
+        if (prErr) return console.error('Erreur vérif colonnes ratings:', prErr.message);
+        const names = (cols || []).map(c => c.name);
+        if (names.includes('driver_id')) db.run(`CREATE INDEX IF NOT EXISTS idx_ratings_driver ON ratings(driver_id)`);
+        if (names.includes('passenger_id')) db.run(`CREATE INDEX IF NOT EXISTS idx_ratings_passenger ON ratings(passenger_id)`);
+        if (names.includes('booking_id')) db.run(`CREATE INDEX IF NOT EXISTS idx_ratings_booking ON ratings(booking_id)`);
+      });
     }
   });
 
@@ -236,9 +252,13 @@ db.serialize(() => {
     if (err) console.error('❌ Erreur conversations:', err.message);
     else {
       console.log('✅ Table "conversations" prête');
-      db.run(`CREATE INDEX IF NOT EXISTS idx_conversations_passenger ON conversations(passenger_id)`);
-      db.run(`CREATE INDEX IF NOT EXISTS idx_conversations_driver ON conversations(driver_id)`);
-      db.run(`CREATE INDEX IF NOT EXISTS idx_conversations_ride ON conversations(ride_id)`);
+      db.all(`PRAGMA table_info(conversations)`, (prErr, cols) => {
+        if (prErr) return console.error('Erreur vérif colonnes conversations:', prErr.message);
+        const names = (cols || []).map(c => c.name);
+        if (names.includes('passenger_id')) db.run(`CREATE INDEX IF NOT EXISTS idx_conversations_passenger ON conversations(passenger_id)`);
+        if (names.includes('driver_id')) db.run(`CREATE INDEX IF NOT EXISTS idx_conversations_driver ON conversations(driver_id)`);
+        if (names.includes('ride_id')) db.run(`CREATE INDEX IF NOT EXISTS idx_conversations_ride ON conversations(ride_id)`);
+      });
     }
   });
 
@@ -255,9 +275,13 @@ db.serialize(() => {
     if (err) console.error('❌ Erreur messages:', err.message);
     else {
       console.log('✅ Table "messages" prête');
-      db.run(`CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)`);
-      db.run(`CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id)`);
-      db.run(`CREATE INDEX IF NOT EXISTS idx_messages_read ON messages(is_read)`);
+      db.all(`PRAGMA table_info(messages)`, (prErr, cols) => {
+        if (prErr) return console.error('Erreur vérif colonnes messages:', prErr.message);
+        const names = (cols || []).map(c => c.name);
+        if (names.includes('conversation_id')) db.run(`CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)`);
+        if (names.includes('sender_id')) db.run(`CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id)`);
+        if (names.includes('is_read')) db.run(`CREATE INDEX IF NOT EXISTS idx_messages_read ON messages(is_read)`);
+      });
     }
   });
 
@@ -307,6 +331,27 @@ db.serialize(() => {
   )`, (err) => {
     if (err) console.error('❌ Erreur notifications:', err.message);
     else console.log('✅ Table "notifications" prête');
+  });
+
+  // Migration safety: ensure important columns exist on older DBs before inserting data
+  const ensureColumn = (table, column, definition, cb) => {
+    db.all(`PRAGMA table_info(${table})`, (err, cols) => {
+      if (err) return cb && cb(err);
+      const has = cols && cols.some(c => c.name === column);
+      if (has) return cb && cb(null, false);
+      db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`, (alterErr) => {
+        cb && cb(alterErr, true);
+      });
+    });
+  };
+
+  // Ensure `passenger_id` exists on `bookings` (older DBs may lack it)
+  ensureColumn('bookings', 'passenger_id', 'INTEGER', (err, added) => {
+    if (err) console.error('❌ Migration check bookings.passenger_id failed:', err.message);
+    else if (added) {
+      console.log('🔧 Migration: column bookings.passenger_id added');
+      db.run(`CREATE INDEX IF NOT EXISTS idx_bookings_passenger ON bookings(passenger_id, status)`);
+    }
   });
 
   // Attendre que toutes les tables soient créées avant d'insérer les données
