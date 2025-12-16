@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 db.serialize(() => {
   console.log("🛠️ Démarrage de l'initialisation de la base de données...");
 
-  // 1. Table users (INTEGER au lieu de BOOLEAN)
+  // 1. Table users (CRÉATION UNIQUEMENT)
   db.run(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE NOT NULL,
@@ -22,12 +22,14 @@ db.serialize(() => {
     car_seats INTEGER,
     rating REAL DEFAULT 5.0,
     total_trips INTEGER DEFAULT 0,
+    total_trips_as_driver INTEGER DEFAULT 0,
+    total_trips_as_passenger INTEGER DEFAULT 0,
     premium_status TEXT DEFAULT 'free',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`, (err) => {
-    if (err) console.error('❌ Erreur users:', err.message);
-    else console.log('✅ Table "users" prête');
+    if (err) console.error('❌ Erreur création users:', err.message);
+    else console.log('✅ Table "users" créée');
   });
 
   // 2. Table verification_codes
@@ -177,6 +179,8 @@ db.serialize(() => {
     booking_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     cancellation_date DATETIME,
     cancellation_reason TEXT,
+    is_rated INTEGER DEFAULT 0,
+    completed_at DATETIME,
     FOREIGN KEY (ride_id) REFERENCES rides(id) ON DELETE CASCADE,
     FOREIGN KEY (passenger_id) REFERENCES users(id) ON DELETE CASCADE,
     UNIQUE(ride_id, passenger_id)
@@ -186,29 +190,78 @@ db.serialize(() => {
       console.log('✅ Table "bookings" prête');
       db.run(`CREATE INDEX IF NOT EXISTS idx_bookings_passenger ON bookings(passenger_id, status)`);
       db.run(`CREATE INDEX IF NOT EXISTS idx_bookings_ride ON bookings(ride_id, status)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status)`);
     }
   });
 
-  // 10. Table reviews
-  db.run(`CREATE TABLE IF NOT EXISTS reviews (
+  // 10. Table ratings
+  db.run(`CREATE TABLE IF NOT EXISTS ratings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    booking_id INTEGER NOT NULL,
     ride_id INTEGER NOT NULL,
-    reviewer_id INTEGER NOT NULL,
-    reviewed_id INTEGER NOT NULL,
-    role_reviewed TEXT CHECK(role_reviewed IN ('driver', 'passenger')) NOT NULL,
-    rating INTEGER CHECK(rating >= 1 AND rating <= 5) NOT NULL,
+    passenger_id INTEGER NOT NULL,
+    driver_id INTEGER NOT NULL,
+    rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
     comment TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE CASCADE,
     FOREIGN KEY (ride_id) REFERENCES rides(id) ON DELETE CASCADE,
-    FOREIGN KEY (reviewer_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (reviewed_id) REFERENCES users(id) ON DELETE CASCADE,
-    UNIQUE(ride_id, reviewer_id, reviewed_id)
+    FOREIGN KEY (passenger_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (driver_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(booking_id)
   )`, (err) => {
-    if (err) console.error('❌ Erreur reviews:', err.message);
-    else console.log('✅ Table "reviews" prête');
+    if (err) console.error('❌ Erreur ratings:', err.message);
+    else {
+      console.log('✅ Table "ratings" prête');
+      db.run(`CREATE INDEX IF NOT EXISTS idx_ratings_driver ON ratings(driver_id)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_ratings_passenger ON ratings(passenger_id)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_ratings_booking ON ratings(booking_id)`);
+    }
   });
 
-  // 11. Table user_badges
+  // 11. Tables pour le chat
+  db.run(`CREATE TABLE IF NOT EXISTS conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ride_id INTEGER NOT NULL,
+    passenger_id INTEGER NOT NULL,
+    driver_id INTEGER NOT NULL,
+    last_message TEXT,
+    last_message_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (ride_id) REFERENCES rides(id) ON DELETE CASCADE,
+    FOREIGN KEY (passenger_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (driver_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(ride_id, passenger_id)
+  )`, (err) => {
+    if (err) console.error('❌ Erreur conversations:', err.message);
+    else {
+      console.log('✅ Table "conversations" prête');
+      db.run(`CREATE INDEX IF NOT EXISTS idx_conversations_passenger ON conversations(passenger_id)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_conversations_driver ON conversations(driver_id)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_conversations_ride ON conversations(ride_id)`);
+    }
+  });
+
+  db.run(`CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER NOT NULL,
+    sender_id INTEGER NOT NULL,
+    message TEXT NOT NULL,
+    is_read INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+    FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
+  )`, (err) => {
+    if (err) console.error('❌ Erreur messages:', err.message);
+    else {
+      console.log('✅ Table "messages" prête');
+      db.run(`CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_messages_read ON messages(is_read)`);
+    }
+  });
+
+  // 12. Table user_badges
   db.run(`CREATE TABLE IF NOT EXISTS user_badges (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -225,7 +278,7 @@ db.serialize(() => {
     else console.log('✅ Table "user_badges" prête');
   });
 
-  // 12. Table favorite_rides
+  // 13. Table favorite_rides
   db.run(`CREATE TABLE IF NOT EXISTS favorite_rides (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -239,7 +292,7 @@ db.serialize(() => {
     else console.log('✅ Table "favorite_rides" prête');
   });
 
-  // 13. Table notifications
+  // 14. Table notifications
   db.run(`CREATE TABLE IF NOT EXISTS notifications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -253,75 +306,98 @@ db.serialize(() => {
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   )`, (err) => {
     if (err) console.error('❌ Erreur notifications:', err.message);
-    else {
-      console.log('✅ Table "notifications" prête');
-      console.log("🏁 Initialisation terminée, démarrage des insertions de données de base...");
-      
-      // ✅ INSERTION DES STATIONS (Sans transaction imbriquée)
-      const stations = [
-        // UM6P - Benguerir (university_id = 1)
-        ['UM6P - Entrée Principale', 'university', 'Benguerir', 'Lotissement 2070', 32.230, -7.933, 1],
-        ['UM6P - Résidences', 'university', 'Benguerir', 'Résidences Green City', 32.232, -7.930, 1],
-        ['Gare Benguerir', 'train_station', 'Benguerir', 'Gare ONCF', 32.245, -7.950, null],
-        
-        // UCA - Marrakech (university_id = 2)
-        ['UCA - Faculté des Sciences Semlalia', 'university', 'Marrakech', 'Avenue Prince Moulay Abdellah', 31.641, -8.010, 2],
-        ['Gare Marrakech', 'train_station', 'Marrakech', 'Avenue Hassan II', 31.633, -8.008, null],
-        
-        // UIR - Rabat (university_id = 3)
-        ['UIR - Campus Technopolis', 'university', 'Rabat', 'Technopolis Rabat-Shore', 33.992, -6.792, 3],
-        
-        // ENSIAS - Rabat (university_id = 4)
-        ['ENSIAS', 'university', 'Rabat', 'Avenue Mohamed Ben Abdellah Regragui', 33.981, -6.872, 4],
-        
-        // EMI - Rabat (university_id = 5)
-        ['EMI', 'university', 'Rabat', 'Avenue des Nations Unies', 33.970, -6.860, 5],
-        
-        // Stations générales
-        ['Gare Casa-Voyageurs', 'train_station', 'Casablanca', 'Place de la Gare', 33.590, -7.583, null],
-        ['Aéroport Mohammed V', 'bus_station', 'Casablanca', 'Aéroport Mohammed V', 33.367, -7.590, null],
-      ];
-      
-      const stationPlaceholders = stations.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ');
-      const stationValues = stations.flat();
-
-      db.run(`INSERT OR IGNORE INTO stations (name, type, city, address, latitude, longitude, university_id) 
-              VALUES ${stationPlaceholders}`, 
-        stationValues, 
-        (err) => {
-          if (err) {
-            console.error('❌ Erreur insertion stations:', err.message);
-          } else {
-            console.log(`✅ ${stations.length} stations insérées !`);
-          }
-
-          // ✅ INSERTION DE L'UTILISATEUR DE TEST
-          // Hasher le mot de passe de test correctement avec bcrypt
-          const hashedPassword = bcrypt.hashSync('testpassword', 12);
-
-          db.run(`INSERT OR IGNORE INTO users 
-            (email, password, first_name, last_name, university, profile_type, is_verified) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [
-              'test@um6p.ma', 
-              hashedPassword, 
-              'Test', 
-              'User', 
-              'UM6P - Université Mohammed VI Polytechnique', 
-              'student', 
-              1
-            ], 
-            (err) => {
-              if (err) {
-                console.error('❌ Erreur insertion utilisateur test:', err.message);
-              } else {
-                console.log('✅ Utilisateur test inséré (test@um6p.ma / testpassword)');
-              }
-              console.log("✨ Base de données prête.");
-            }
-          );
-        }
-      );
-    }
+    else console.log('✅ Table "notifications" prête');
   });
+
+  // Attendre que toutes les tables soient créées avant d'insérer les données
+  setTimeout(() => {
+    console.log("📊 Insertion des données initiales...");
+    
+    // Insertion des stations
+    const stations = [
+      // UM6P - Benguerir (university_id = 1)
+      ['UM6P - Entrée Principale', 'university', 'Benguerir', 'Lotissement 2070', 32.230, -7.933, 1],
+      ['UM6P - Résidences', 'university', 'Benguerir', 'Résidences Green City', 32.232, -7.930, 1],
+      ['Gare Benguerir', 'train_station', 'Benguerir', 'Gare ONCF', 32.245, -7.950, null],
+      
+      // UCA - Marrakech (university_id = 2)
+      ['UCA - Faculté des Sciences Semlalia', 'university', 'Marrakech', 'Avenue Prince Moulay Abdellah', 31.641, -8.010, 2],
+      ['Gare Marrakech', 'train_station', 'Marrakech', 'Avenue Hassan II', 31.633, -8.008, null],
+      
+      // UIR - Rabat (university_id = 3)
+      ['UIR - Campus Technopolis', 'university', 'Rabat', 'Technopolis Rabat-Shore', 33.992, -6.792, 3],
+      
+      // ENSIAS - Rabat (university_id = 4)
+      ['ENSIAS', 'university', 'Rabat', 'Avenue Mohamed Ben Abdellah Regragui', 33.981, -6.872, 4],
+      
+      // EMI - Rabat (university_id = 5)
+      ['EMI', 'university', 'Rabat', 'Avenue des Nations Unies', 33.970, -6.860, 5],
+      
+      // Stations générales
+      ['Gare Casa-Voyageurs', 'train_station', 'Casablanca', 'Place de la Gare', 33.590, -7.583, null],
+      ['Aéroport Mohammed V', 'bus_station', 'Casablanca', 'Aéroport Mohammed V', 33.367, -7.590, null],
+    ];
+    
+    const stationPlaceholders = stations.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ');
+    const stationValues = stations.flat();
+
+    db.run(`INSERT OR IGNORE INTO stations (name, type, city, address, latitude, longitude, university_id) 
+            VALUES ${stationPlaceholders}`, 
+      stationValues, 
+      (err) => {
+        if (err) {
+          console.error('❌ Erreur insertion stations:', err.message);
+        } else {
+          console.log(`✅ ${stations.length} stations insérées !`);
+        }
+
+        // Insertion de l'utilisateur test
+        const hashedPassword = bcrypt.hashSync('testpassword', 12);
+
+        db.run(`INSERT OR IGNORE INTO users 
+          (email, password, first_name, last_name, university, profile_type, is_verified, is_driver) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            'test@um6p.ma', 
+            hashedPassword, 
+            'Test', 
+            'User', 
+            'UM6P - Université Mohammed VI Polytechnique', 
+            'student', 
+            1,
+            1
+          ], 
+          (err) => {
+            if (err) {
+              console.error('❌ Erreur insertion utilisateur test:', err.message);
+            } else {
+              console.log('✅ Utilisateur test inséré (test@um6p.ma / testpassword)');
+            }
+            console.log("✨ Base de données prête.");
+          }
+        );
+      }
+    );
+
+    // Création de la vue pour les statistiques de notation
+    db.run(`CREATE VIEW IF NOT EXISTS user_ratings_summary AS
+      SELECT 
+        driver_id as user_id,
+        'driver' as role_reviewed,
+        COUNT(*) as total_ratings,
+        AVG(rating) as average_rating,
+        COUNT(CASE WHEN rating = 5 THEN 1 END) as five_stars,
+        COUNT(CASE WHEN rating = 4 THEN 1 END) as four_stars,
+        COUNT(CASE WHEN rating = 3 THEN 1 END) as three_stars,
+        COUNT(CASE WHEN rating = 2 THEN 1 END) as two_stars,
+        COUNT(CASE WHEN rating = 1 THEN 1 END) as one_stars
+      FROM ratings
+      GROUP BY driver_id`, (err) => {
+      if (err) console.error('❌ Erreur vue user_ratings_summary:', err.message);
+      else console.log('✅ Vue "user_ratings_summary" créée');
+    });
+
+  }, 1000); // Délai pour garantir la création des tables
 });
+
+console.log("🏁 Script d'initialisation terminé.");

@@ -9,10 +9,14 @@ router.use(authMiddleware);
 // Routes principales
 router.post('/', reservationController.create);
 router.delete('/:id', reservationController.cancel);
+router.patch('/:id/complete', reservationController.complete);
+router.put('/:id/complete', reservationController.complete);
 router.get('/my-reservations', reservationController.myReservations);
 // Alias court pour compatibilité client
 router.get('/my', reservationController.myReservations);
 router.get('/ride/:rideId', reservationController.rideReservations);
+// Alias attendu par le client Flutter
+router.get('/for-ride/:rideId', reservationController.rideReservations);
 
 // Statistiques (pour l'écran d'accueil)
 router.get('/stats', (req, res) => {

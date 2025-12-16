@@ -467,6 +467,35 @@ const Ride = {
     
     db.all(sql, callback);
   }
+  ,
+
+  // ✅ Suggestions intelligentes pour l'utilisateur
+  getSuggestions: (userId, callback) => {
+    const sql = `
+      SELECT DISTINCT
+        r.*,
+        ds.name as departure_station,
+        ars.name as arrival_station,
+        d.first_name as driver_name,
+        d.rating as driver_rating,
+        (
+          (SELECT COUNT(*) * 3 FROM bookings b JOIN rides r2 ON b.ride_id = r2.id WHERE b.passenger_id = ? AND r2.departure_station_id = r.departure_station_id) +
+          (SELECT COUNT(*) * 2 FROM bookings b JOIN rides r2 ON b.ride_id = r2.id WHERE b.passenger_id = ? AND r2.arrival_station_id = r.arrival_station_id) +
+          (SELECT COUNT(*) FROM favorite_rides fr WHERE fr.user_id = ? AND fr.ride_id = r.id)
+        ) as relevance_score
+      FROM rides r
+      JOIN users d ON r.driver_id = d.id
+      JOIN stations ds ON r.departure_station_id = ds.id
+      JOIN stations ars ON r.arrival_station_id = ars.id
+      WHERE r.status IN ('active', 'pending')
+      AND r.driver_id != ?
+      AND DATE(r.departure_date) >= DATE('now')
+      ORDER BY relevance_score DESC, r.departure_date ASC
+      LIMIT 10
+    `;
+
+    db.all(sql, [userId, userId, userId, userId], callback);
+  },
 };
 
 module.exports = Ride;

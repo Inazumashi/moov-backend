@@ -49,7 +49,10 @@ const rideRoutes = require('./routes/ride.routes');
 const searchRoutes = require('./routes/search.routes');
 const reservationRoutes = require('./routes/reservation.routes');
 const reviewRoutes = require('./routes/review.routes');
+const ratingRoutes = require('./routes/rating.routes');
 const advancedRoutes = require('./routes/advanced.routes');
+const statsRoutes = require('./routes/stats.routes');
+const chatRoutes = require('./routes/chat.routes');
 
 // 4. ROUTES API
 app.use('/api/auth', authRoutes);
@@ -58,7 +61,10 @@ app.use('/api/rides', rideRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/reservations', reservationRoutes);
 app.use('/api/reviews', reviewRoutes);
+app.use('/api/ratings', ratingRoutes);
 app.use('/api/advanced', advancedRoutes);
+app.use('/api/stats', statsRoutes);
+app.use('/api/chat', chatRoutes);
 
 // Route pour vérifier que l'API fonctionne
 app.get('/api/health', (req, res) => {

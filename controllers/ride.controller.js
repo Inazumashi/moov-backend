@@ -305,6 +305,24 @@ const rideController = {
     }
   },
 
+  // Suggestions intelligentes
+  suggestions: async (req, res) => {
+    try {
+      const userId = req.userId;
+      Ride.getSuggestions(userId, (err, rides) => {
+        if (err) {
+          console.error('Erreur suggestions:', err);
+          return res.status(500).json({ success: false, message: 'Erreur serveur' });
+        }
+
+        res.json({ success: true, suggestions: rides });
+      });
+    } catch (error) {
+      console.error('Erreur suggestions controller:', error);
+      res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+  },
+
   // DÉTAILS D'UN TRAJET
   getDetails: async (req, res) => {
     try {

@@ -1,5 +1,6 @@
 const Reservation = require('../models/reservation.model');
 const Ride = require('../models/ride.model');
+const User = require('../models/user.model');
 const db = require('../config/db');
 
 const reservationController = {
@@ -188,6 +189,104 @@ const reservationController = {
         success: false,
         message: 'Erreur serveur'
       });
+    }
+  }
+,
+
+  // Marquer une réservation comme complétée (conducteur ou admin)
+  complete: async (req, res) => {
+    try {
+      const userId = req.userId;
+      const { id } = req.params; // booking id
+
+      // Récupérer la réservation + driver
+      const sql = `SELECT b.*, r.driver_id FROM bookings b JOIN rides r ON b.ride_id = r.id WHERE b.id = ?`;
+      db.get(sql, [id], (err, booking) => {
+        if (err) {
+          console.error('Erreur récupération réservation:', err);
+          return res.status(500).json({ success: false, message: 'Erreur serveur' });
+        }
+
+        if (!booking) {
+          return res.status(404).json({ success: false, message: 'Réservation non trouvée' });
+        }
+
+        // Récupérer l'utilisateur (pour vérifier rôle admin)
+        User.findById(userId, (err, user) => {
+          if (err) {
+            console.error('Erreur récupération utilisateur:', err);
+            return res.status(500).json({ success: false, message: 'Erreur serveur' });
+          }
+
+          const isAdmin = user && user.profile_type === 'admin';
+          const isDriver = booking.driver_id === userId;
+
+          if (!isDriver && !isAdmin) {
+            return res.status(403).json({ success: false, message: 'Forbidden' });
+          }
+
+          if (booking.status === 'completed') {
+            return res.status(409).json({ success: false, message: 'Réservation déjà complétée' });
+          }
+
+          if (booking.status === 'cancelled') {
+            return res.status(400).json({ success: false, message: 'Impossible de marquer une réservation annulée comme complétée' });
+          }
+
+          // Vérifier si la colonne completed_at existe, sinon l'ajouter
+          db.all("PRAGMA table_info(bookings)", [], (err, cols) => {
+            if (err) {
+              console.error('Erreur PRAGMA:', err);
+              return res.status(500).json({ success: false, message: 'Erreur serveur' });
+            }
+
+            const hasCompletedAt = cols && cols.some(c => c.name === 'completed_at');
+
+            const proceedUpdate = () => {
+              const updateSql = `UPDATE bookings SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?`;
+              db.run(updateSql, [id], function(err) {
+                if (err) {
+                  console.error('Erreur mise à jour réservation:', err);
+                  return res.status(500).json({ success: false, message: 'Erreur lors de la mise à jour' });
+                }
+
+                // Optionnel: incrémenter compteur conducteur
+                if (booking.driver_id) {
+                  db.run(`UPDATE users SET total_trips_as_driver = COALESCE(total_trips_as_driver,0) + 1 WHERE id = ?`, [booking.driver_id], (err) => {
+                    if (err) console.error('Erreur incrément total_trips_as_driver:', err);
+                  });
+                }
+
+                // Retourner la réservation mise à jour
+                const selectSql = `SELECT b.* FROM bookings b WHERE b.id = ?`;
+                db.get(selectSql, [id], (err, updated) => {
+                  if (err) {
+                    console.error('Erreur récupération réservation mise à jour:', err);
+                    return res.status(500).json({ success: false, message: 'Erreur serveur' });
+                  }
+
+                  res.json({ success: true, reservation: updated });
+                });
+              });
+            };
+
+            if (!hasCompletedAt) {
+              db.run(`ALTER TABLE bookings ADD COLUMN completed_at DATETIME`, [], (err) => {
+                if (err) {
+                  console.error('Erreur ajout colonne completed_at:', err);
+                  // Ne bloquons pas l'opération si l'ALTER échoue — tenter quand même la mise à jour
+                }
+                proceedUpdate();
+              });
+            } else {
+              proceedUpdate();
+            }
+          });
+        });
+      });
+    } catch (error) {
+      console.error('Erreur complete reservation:', error);
+      res.status(500).json({ success: false, message: 'Erreur serveur' });
     }
   }
 };

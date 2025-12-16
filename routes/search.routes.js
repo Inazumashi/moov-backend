@@ -7,6 +7,7 @@ const stationController = require('../controllers/station.controller');
 // Routes de recherche publiques
 router.get('/rides', rideController.search);
 router.get('/rides/quick', rideController.quickSearch);
+router.get('/rides/suggestions', rideController.suggestions);
 router.get('/stations', stationController.autocomplete);
 router.get('/stations/nearby', stationController.nearby);
 router.get('/stations/popular', stationController.popular);
