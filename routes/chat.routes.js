@@ -1,162 +1,249 @@
+// routes/chat.routes.js
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/auth.middleware');
 const db = require('../config/db');
 
+// Toutes les routes du chat nécessitent l'authentification
 router.use(authMiddleware);
 
-// Créer ou obtenir une conversation
+// Obtenir toutes les conversations de l'utilisateur
+router.get('/conversations', (req, res) => {
+  const userId = req.userId;
+
+  const sql = `
+    SELECT 
+      c.id,
+      c.ride_id,
+      r.departure_date,
+      r.departure_time,
+      ds.name as departure_station,
+      ars.name as arrival_station,
+      CASE 
+        WHEN c.driver_id = ? THEN u2.first_name || ' ' || u2.last_name
+        ELSE u1.first_name || ' ' || u1.last_name
+      END as other_user_name,
+      CASE 
+        WHEN c.driver_id = ? THEN c.passenger_id
+        ELSE c.driver_id
+      END as other_user_id,
+      (SELECT message FROM messages 
+       WHERE conversation_id = c.id 
+       ORDER BY created_at DESC LIMIT 1) as last_message,
+      (SELECT created_at FROM messages 
+       WHERE conversation_id = c.id 
+       ORDER BY created_at DESC LIMIT 1) as last_message_at,
+      (SELECT COUNT(*) FROM messages m 
+       WHERE m.conversation_id = c.id 
+       AND m.sender_id != ? 
+       AND m.is_read = 0) as unread_count
+    FROM conversations c
+    JOIN rides r ON c.ride_id = r.id
+    JOIN stations ds ON r.departure_station_id = ds.id
+    JOIN stations ars ON r.arrival_station_id = ars.id
+    JOIN users u1 ON c.driver_id = u1.id
+    JOIN users u2 ON c.passenger_id = u2.id
+    WHERE c.driver_id = ? OR c.passenger_id = ?
+    ORDER BY last_message_at DESC NULLS LAST
+  `;
+
+  db.all(sql, [userId, userId, userId, userId, userId], (err, conversations) => {
+    if (err) {
+      console.error('Erreur récupération conversations:', err);
+      return res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+
+    res.json({ success: true, data: conversations || [] });
+  });
+});
+
+// Créer ou récupérer une conversation pour un trajet
 router.post('/conversations', (req, res) => {
   const userId = req.userId;
-  const { rideId } = req.body;
-  if (!rideId) return res.status(400).json({ success: false, message: 'ID du trajet requis' });
+  const { ride_id } = req.body;
 
-  const rideSql = 'SELECT driver_id FROM rides WHERE id = ?';
-  db.get(rideSql, [rideId], (err, ride) => {
-    if (err || !ride) return res.status(404).json({ success: false, message: 'Trajet non trouvé' });
+  if (!ride_id) {
+    return res.status(400).json({ success: false, message: 'ride_id requis' });
+  }
+
+  // Vérifier que le trajet existe
+  const rideSql = 'SELECT driver_id, id FROM rides WHERE id = ?';
+  db.get(rideSql, [ride_id], (err, ride) => {
+    if (err || !ride) {
+      return res.status(404).json({ success: false, message: 'Trajet non trouvé' });
+    }
+
     const driverId = ride.driver_id;
-    const passengerId = userId === driverId ? null : userId;
-    if (!passengerId) return res.status(400).json({ success: false, message: 'Vous ne pouvez pas créer une conversation avec vous-même' });
+    const passengerId = userId;
 
+    // Vérifier si une conversation existe déjà
     const checkSql = `
-      SELECT c.*,
-             d.first_name as driver_first_name,
-             d.last_name as driver_last_name,
-             p.first_name as passenger_first_name,
-             p.last_name as passenger_last_name,
-             r.departure_station_id,
-             r.arrival_station_id,
-             ds.name as departure_station,
-             ars.name as arrival_station
-      FROM conversations c
-      JOIN users d ON c.driver_id = d.id
-      JOIN users p ON c.passenger_id = p.id
-      JOIN rides r ON c.ride_id = r.id
-      JOIN stations ds ON r.departure_station_id = ds.id
-      JOIN stations ars ON r.arrival_station_id = ars.id
-      WHERE c.ride_id = ? AND c.passenger_id = ?
+      SELECT id FROM conversations 
+      WHERE ride_id = ? 
+      AND driver_id = ? 
+      AND passenger_id = ?
     `;
+    
+    db.get(checkSql, [ride_id, driverId, passengerId], (err, existing) => {
+      if (existing) {
+        return res.json({ success: true, data: existing });
+      }
 
-    db.get(checkSql, [rideId, passengerId], (err, existingConv) => {
-      if (err) return res.status(500).json({ success: false, message: 'Erreur serveur' });
-      if (existingConv) return res.json({ success: true, conversation: existingConv, is_new: false });
+      // Créer nouvelle conversation
+      const insertSql = `
+        INSERT INTO conversations (ride_id, driver_id, passenger_id, created_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      `;
 
-      const insertSql = `INSERT INTO conversations (ride_id, passenger_id, driver_id) VALUES (?, ?, ?)`;
-      db.run(insertSql, [rideId, passengerId, driverId], function(err) {
-        if (err) return res.status(500).json({ success: false, message: 'Erreur création conversation' });
-        db.get(checkSql, [rideId, passengerId], (err, newConv) => {
-          if (err) return res.status(500).json({ success: false, message: 'Erreur serveur' });
-          res.status(201).json({ success: true, conversation: newConv, is_new: true });
-        });
+      db.run(insertSql, [ride_id, driverId, passengerId], function(err) {
+        if (err) {
+          console.error('Erreur création conversation:', err);
+          return res.status(500).json({ success: false, message: 'Erreur serveur' });
+        }
+
+        res.json({ success: true, data: { id: this.lastID } });
       });
     });
   });
 });
 
-// Obtenir mes conversations
-router.get('/conversations', (req, res) => {
+// Obtenir les messages d'une conversation
+router.get('/messages/:conversationId', (req, res) => {
   const userId = req.userId;
-  const sql = `
-    SELECT c.*,
-           CASE 
-             WHEN c.driver_id = ? THEN p.first_name || ' ' || p.last_name
-             ELSE d.first_name || ' ' || d.last_name
-           END as other_user_name,
-           CASE 
-             WHEN c.driver_id = ? THEN p.id
-             ELSE d.id
-           END as other_user_id,
-           ds.name as departure_station,
-           ars.name as arrival_station,
-           r.departure_date,
-           (SELECT COUNT(*) FROM messages m 
-            WHERE m.conversation_id = c.id 
-            AND m.sender_id != ? 
-            AND m.is_read = 0) as unread_count
-    FROM conversations c
-    JOIN users d ON c.driver_id = d.id
-    JOIN users p ON c.passenger_id = p.id
-    JOIN rides r ON c.ride_id = r.id
-    JOIN stations ds ON r.departure_station_id = ds.id
-    JOIN stations ars ON r.arrival_station_id = ars.id
-    WHERE c.driver_id = ? OR c.passenger_id = ?
-    ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
+  const { conversationId } = req.params;
+  const { page = 1, limit = 50 } = req.query;
+
+  // Vérifier que l'utilisateur fait partie de la conversation
+  const checkSql = `
+    SELECT id FROM conversations 
+    WHERE id = ? 
+    AND (driver_id = ? OR passenger_id = ?)
   `;
 
-  db.all(sql, [userId, userId, userId, userId, userId], (err, conversations) => {
-    if (err) return res.status(500).json({ success: false, message: 'Erreur serveur' });
-    res.json({ success: true, conversations: conversations, total: conversations.length });
+  db.get(checkSql, [conversationId, userId, userId], (err, conversation) => {
+    if (err || !conversation) {
+      return res.status(403).json({ success: false, message: 'Accès refusé' });
+    }
+
+    const sql = `
+      SELECT 
+        id,
+        conversation_id,
+        sender_id,
+        message,
+        is_read,
+        created_at
+      FROM messages
+      WHERE conversation_id = ?
+      ORDER BY created_at ASC
+      LIMIT ? OFFSET ?
+    `;
+
+    const offset = (page - 1) * limit;
+    db.all(sql, [conversationId, parseInt(limit), offset], (err, messages) => {
+      if (err) {
+        console.error('Erreur récupération messages:', err);
+        return res.status(500).json({ success: false, message: 'Erreur serveur' });
+      }
+
+      res.json({ success: true, data: messages || [] });
+    });
   });
 });
 
 // Envoyer un message
 router.post('/messages', (req, res) => {
-  const senderId = req.userId;
-  const { conversationId, message } = req.body;
-  if (!conversationId || !message || message.trim() === '') return res.status(400).json({ success: false, message: 'Conversation ID et message requis' });
+  const userId = req.userId;
+  const { conversation_id, message } = req.body;
 
-  const checkSql = `SELECT * FROM conversations WHERE id = ? AND (driver_id = ? OR passenger_id = ?)`;
-  db.get(checkSql, [conversationId, senderId, senderId], (err, conv) => {
-    if (err || !conv) return res.status(403).json({ success: false, message: 'Conversation non trouvée ou accès refusé' });
-    const insertSql = `INSERT INTO messages (conversation_id, sender_id, message) VALUES (?, ?, ?)`;
-    db.run(insertSql, [conversationId, senderId, message.trim()], function(err) {
-      if (err) return res.status(500).json({ success: false, message: 'Erreur envoi message' });
-      const messageId = this.lastID;
-      const updateSql = `UPDATE conversations SET last_message = ?, last_message_at = CURRENT_TIMESTAMP WHERE id = ?`;
-      db.run(updateSql, [message.trim(), conversationId], (err) => {
-        if (err) console.error('Erreur mise à jour conversation:', err);
-        const getSql = `SELECT m.*, u.first_name as sender_first_name, u.last_name as sender_last_name FROM messages m JOIN users u ON m.sender_id = u.id WHERE m.id = ?`;
-        db.get(getSql, [messageId], (err, newMessage) => {
-          if (err) return res.status(500).json({ success: false, message: 'Erreur serveur' });
-          res.status(201).json({ success: true, message: newMessage });
-        });
+  if (!conversation_id || !message) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'conversation_id et message requis' 
+    });
+  }
+
+  // Vérifier que l'utilisateur fait partie de la conversation
+  const checkSql = `
+    SELECT id FROM conversations 
+    WHERE id = ? 
+    AND (driver_id = ? OR passenger_id = ?)
+  `;
+
+  db.get(checkSql, [conversation_id, userId, userId], (err, conversation) => {
+    if (err || !conversation) {
+      return res.status(403).json({ success: false, message: 'Accès refusé' });
+    }
+
+    const sql = `
+      INSERT INTO messages (conversation_id, sender_id, message, created_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+    `;
+
+    db.run(sql, [conversation_id, userId, message], function(err) {
+      if (err) {
+        console.error('Erreur envoi message:', err);
+        return res.status(500).json({ success: false, message: 'Erreur serveur' });
+      }
+
+      res.json({ 
+        success: true, 
+        data: { 
+          id: this.lastID,
+          conversation_id,
+          sender_id: userId,
+          message,
+          is_read: 0,
+          created_at: new Date().toISOString()
+        } 
       });
     });
   });
 });
 
-// Obtenir messages d'une conversation
-router.get('/messages/:conversationId', (req, res) => {
+// Marquer les messages comme lus
+router.put('/conversations/:conversationId/mark-read', (req, res) => {
   const userId = req.userId;
   const { conversationId } = req.params;
-  const { page = 1, limit = 50 } = req.query;
-  const checkSql = `SELECT * FROM conversations WHERE id = ? AND (driver_id = ? OR passenger_id = ?)`;
-  db.get(checkSql, [conversationId, userId, userId], (err, conv) => {
-    if (err || !conv) return res.status(403).json({ success: false, message: 'Conversation non trouvée ou accès refusé' });
-    const offset = (page - 1) * limit;
-    const sql = `SELECT m.*, u.first_name as sender_first_name, u.last_name as sender_last_name FROM messages m JOIN users u ON m.sender_id = u.id WHERE m.conversation_id = ? ORDER BY m.created_at DESC LIMIT ? OFFSET ?`;
-    db.all(sql, [conversationId, parseInt(limit), offset], (err, messages) => {
-      if (err) return res.status(500).json({ success: false, message: 'Erreur serveur' });
-      messages.reverse();
-      const updateSql = `UPDATE messages SET is_read = 1 WHERE conversation_id = ? AND sender_id != ? AND is_read = 0`;
-      db.run(updateSql, [conversationId, userId]);
-      res.json({ success: true, messages: messages, total: messages.length });
-    });
+
+  const sql = `
+    UPDATE messages 
+    SET is_read = 1 
+    WHERE conversation_id = ? 
+    AND sender_id != ? 
+    AND is_read = 0
+  `;
+
+  db.run(sql, [conversationId, userId], (err) => {
+    if (err) {
+      console.error('Erreur marquage messages lus:', err);
+      return res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+
+    res.json({ success: true });
   });
 });
 
-// Unread count
+// Obtenir le nombre de messages non lus
 router.get('/unread-count', (req, res) => {
   const userId = req.userId;
-  const sql = `SELECT COUNT(*) as unread_count FROM messages m JOIN conversations c ON m.conversation_id = c.id WHERE (c.driver_id = ? OR c.passenger_id = ?) AND m.sender_id != ? AND m.is_read = 0`;
-  db.get(sql, [userId, userId, userId], (err, result) => {
-    if (err) return res.status(500).json({ success: false, message: 'Erreur serveur' });
-    res.json({ success: true, unread_count: result.unread_count || 0 });
-  });
-});
 
-// Delete conversation
-router.delete('/conversations/:id', (req, res) => {
-  const userId = req.userId;
-  const { id } = req.params;
-  const checkSql = `SELECT * FROM conversations WHERE id = ? AND (driver_id = ? OR passenger_id = ?)`;
-  db.get(checkSql, [id, userId, userId], (err, conv) => {
-    if (err || !conv) return res.status(403).json({ success: false, message: 'Conversation non trouvée ou accès refusé' });
-    const deleteSql = 'DELETE FROM conversations WHERE id = ?';
-    db.run(deleteSql, [id], function(err) {
-      if (err) return res.status(500).json({ success: false, message: 'Erreur suppression' });
-      res.json({ success: true, message: 'Conversation supprimée' });
-    });
+  const sql = `
+    SELECT COUNT(*) as count
+    FROM messages m
+    JOIN conversations c ON m.conversation_id = c.id
+    WHERE (c.driver_id = ? OR c.passenger_id = ?)
+    AND m.sender_id != ?
+    AND m.is_read = 0
+  `;
+
+  db.get(sql, [userId, userId, userId], (err, result) => {
+    if (err) {
+      console.error('Erreur comptage non lus:', err);
+      return res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+
+    res.json({ success: true, unread_count: result.count || 0 });
   });
 });
 

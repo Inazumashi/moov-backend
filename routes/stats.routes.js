@@ -1,3 +1,4 @@
+// routes/stats.routes.js
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/auth.middleware');
@@ -5,168 +6,179 @@ const db = require('../config/db');
 
 router.use(authMiddleware);
 
-// ✅ Statistiques globales utilisateur
+// Dashboard des statistiques
 router.get('/dashboard', (req, res) => {
   const userId = req.userId;
-  
+
+  // Requête pour toutes les stats
   const sql = `
     SELECT 
-      u.first_name,
-      u.last_name,
-      u.email,
-      u.is_driver,
-      u.has_car,
-      u.rating,
-      u.total_trips,
+      -- Info utilisateur
       u.created_at as member_since,
-      (SELECT COUNT(*) FROM rides WHERE driver_id = ?) as rides_published,
-      (SELECT COUNT(*) FROM rides WHERE driver_id = ? AND status = 'completed') as rides_completed,
-      (SELECT COUNT(*) FROM rides WHERE driver_id = ? AND status = 'active') as rides_active,
-      (SELECT AVG(price_per_seat) FROM rides WHERE driver_id = ?) as avg_price_driver,
-      (SELECT SUM(b.total_price) 
-       FROM bookings b 
-       JOIN rides r ON b.ride_id = r.id 
-       WHERE r.driver_id = ? AND b.status = 'completed') as total_earned,
-      (SELECT COUNT(*) FROM bookings WHERE passenger_id = ?) as bookings_total,
-      (SELECT COUNT(*) FROM bookings WHERE passenger_id = ? AND status = 'confirmed') as bookings_confirmed,
-      (SELECT COUNT(*) FROM bookings WHERE passenger_id = ? AND status = 'completed') as bookings_completed,
-      (SELECT SUM(total_price) FROM bookings WHERE passenger_id = ? AND status = 'completed') as total_spent,
-      (SELECT COUNT(*) FROM favorite_rides WHERE user_id = ?) as favorites_count,
-      (SELECT COUNT(*) FROM ratings WHERE driver_id = ?) as ratings_received,
-      (SELECT AVG(rating) FROM ratings WHERE driver_id = ?) as avg_rating_received,
-      (SELECT COUNT(*) FROM ratings WHERE passenger_id = ?) as ratings_given
+      u.total_trips,
+      u.rating as average_rating,
+      u.is_driver,
+      
+      -- Trajets ce mois
+      (SELECT COUNT(*) FROM bookings b 
+       JOIN rides r ON b.ride_id = r.id
+       WHERE b.passenger_id = ? 
+       AND strftime('%Y-%m', b.booking_date as created_at) = strftime('%Y-%m', 'now')
+       AND b.status = 'completed') as trips_this_month,
+      
+      -- Distance totale (estimation)
+      (SELECT COALESCE(SUM(50), 0) FROM bookings b
+       WHERE b.passenger_id = ? 
+       AND b.status = 'completed') as total_distance,
+      
+      -- CO2 économisé (estimation)
+      (SELECT COALESCE(SUM(50 * 0.12), 0) FROM bookings b
+       WHERE b.passenger_id = ? 
+       AND b.status = 'completed') as co2_saved,
+       
+      -- Stats conducteur
+      (SELECT COUNT(DISTINCT b.passenger_id) FROM bookings b
+       JOIN rides r ON b.ride_id = r.id
+       WHERE r.driver_id = ?
+       AND b.status = 'completed') as total_passengers,
+       
+      (SELECT COUNT(*) * 100.0 / NULLIF(COUNT(*), 0) 
+       FROM bookings b
+       JOIN rides r ON b.ride_id = r.id
+       WHERE r.driver_id = ?
+       AND b.status IN ('completed', 'confirmed')) as satisfied_passengers
+       
     FROM users u
     WHERE u.id = ?
   `;
-  
-  db.get(sql, [
-    userId, userId, userId, userId, userId,
-    userId, userId, userId, userId,
-    userId,
-    userId, userId, userId,
-    userId
-  ], (err, stats) => {
+
+  db.get(sql, [userId, userId, userId, userId, userId, userId], (err, stats) => {
     if (err) {
       console.error('Erreur stats dashboard:', err);
       return res.status(500).json({ success: false, message: 'Erreur serveur' });
     }
+
     if (!stats) {
       return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
     }
 
-    const avgPublicTransportCost = 80;
-    const economiesPotentielles = (stats.bookings_completed || 0) * 
-                                  (avgPublicTransportCost - (stats.total_spent || 0) / Math.max(stats.bookings_completed || 1, 1));
-    const co2Saved = (stats.bookings_completed || 0) * 15;
-
     res.json({
       success: true,
       stats: {
-        ...stats,
-        economies_estimees: Math.max(economiesPotentielles, 0),
-        co2_saved_kg: co2Saved,
-        member_for_days: Math.floor((Date.now() - new Date(stats.member_since).getTime()) / (1000 * 60 * 60 * 24))
+        memberSince: stats.member_since ? new Date(stats.member_since).getFullYear() : new Date().getFullYear(),
+        totalTrips: stats.total_trips || 0,
+        averageRating: parseFloat((stats.average_rating || 5.0).toFixed(1)),
+        tripsThisMonth: stats.trips_this_month || 0,
+        totalDistance: Math.round(stats.total_distance || 0),
+        co2Saved: Math.round(stats.co2_saved || 0),
+        totalPassengers: stats.total_passengers || 0,
+        satisfiedPassengers: Math.round(stats.satisfied_passengers || 100)
       }
     });
   });
 });
 
-// Monthly graphs
+// Stats mensuelles
 router.get('/monthly', (req, res) => {
   const userId = req.userId;
-  const { year = new Date().getFullYear() } = req.query;
+  const year = req.query.year || new Date().getFullYear();
+
   const sql = `
     SELECT 
-      strftime('%m', created_at) as month,
+      strftime('%m', b.booking_date as created_at) as month,
       COUNT(*) as count,
-      'ride' as type
-    FROM rides
-    WHERE driver_id = ? 
-    AND strftime('%Y', created_at) = ?
-    GROUP BY month
-    UNION ALL
-    SELECT 
-      strftime('%m', created_at) as month,
-      COUNT(*) as count,
-      'booking' as type
-    FROM bookings
-    WHERE passenger_id = ?
-    AND strftime('%Y', created_at) = ?
+      SUM(b.total_price) as revenue
+    FROM bookings b
+    WHERE b.passenger_id = ?
+    AND strftime('%Y', b.booking_date as created_at) = ?
+    AND b.status = 'completed'
     GROUP BY month
     ORDER BY month
   `;
-  db.all(sql, [userId, year.toString(), userId, year.toString()], (err, data) => {
-    if (err) return res.status(500).json({ success: false, message: 'Erreur serveur' });
-    const monthlyData = Array.from({ length: 12 }, (_, i) => ({ month: (i + 1).toString().padStart(2, '0'), rides: 0, bookings: 0 }));
+
+  db.all(sql, [userId, year.toString()], (err, data) => {
+    if (err) {
+      console.error('Erreur stats mensuelles:', err);
+      return res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+
+    // Remplir les mois manquants avec 0
+    const months = Array.from({ length: 12 }, (_, i) => ({
+      month: (i + 1).toString().padLeft(2, '0'),
+      count: 0,
+      revenue: 0
+    }));
+
     data.forEach(row => {
-      const monthIndex = parseInt(row.month) - 1;
-      if (row.type === 'ride') monthlyData[monthIndex].rides = row.count;
-      else monthlyData[monthIndex].bookings = row.count;
+      const index = parseInt(row.month) - 1;
+      months[index] = {
+        month: row.month,
+        count: row.count,
+        revenue: row.revenue
+      };
     });
-    res.json({ success: true, year: parseInt(year), data: monthlyData });
+
+    res.json({ success: true, data: months });
   });
 });
 
-// Top routes
+// Top trajets
 router.get('/top-routes', (req, res) => {
   const userId = req.userId;
-  const sql = `
-    SELECT 
-      ds.name as departure,
-      ars.name as arrival,
-      COUNT(*) as count,
-      AVG(r.price_per_seat) as avg_price
-    FROM rides r
-    JOIN stations ds ON r.departure_station_id = ds.id
-    JOIN stations ars ON r.arrival_station_id = ars.id
-    WHERE r.driver_id = ?
-    GROUP BY r.departure_station_id, r.arrival_station_id
-    ORDER BY count DESC
-    LIMIT 5
-  `;
-  db.all(sql, [userId], (err, routes) => {
-    if (err) return res.status(500).json({ success: false, message: 'Erreur serveur' });
-    res.json({ success: true, top_routes: routes });
-  });
-});
 
-// Recent activity
-router.get('/recent-activity', (req, res) => {
-  const userId = req.userId;
-  const { limit = 10 } = req.query;
   const sql = `
     SELECT 
-      'ride' as type,
-      r.id,
-      ds.name as departure,
-      ars.name as arrival,
-      r.departure_date as date,
-      r.status,
-      r.price_per_seat as amount
-    FROM rides r
-    JOIN stations ds ON r.departure_station_id = ds.id
-    JOIN stations ars ON r.arrival_station_id = ars.id
-    WHERE r.driver_id = ?
-    UNION ALL
-    SELECT 
-      'booking' as type,
-      b.id,
-      ds.name as departure,
-      ars.name as arrival,
-      r.departure_date as date,
-      b.status,
-      b.total_price as amount
+      ds.name as departure_station,
+      ars.name as arrival_station,
+      COUNT(*) as count,
+      AVG(b.total_price) as avg_price
     FROM bookings b
     JOIN rides r ON b.ride_id = r.id
     JOIN stations ds ON r.departure_station_id = ds.id
     JOIN stations ars ON r.arrival_station_id = ars.id
     WHERE b.passenger_id = ?
-    ORDER BY date DESC
+    AND b.status = 'completed'
+    GROUP BY r.departure_station_id, r.arrival_station_id
+    ORDER BY count DESC
+    LIMIT 5
+  `;
+
+  db.all(sql, [userId], (err, routes) => {
+    if (err) {
+      console.error('Erreur top routes:', err);
+      return res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+
+    res.json({ success: true, top_routes: routes || [] });
+  });
+});
+
+// Activité récente
+router.get('/recent-activity', (req, res) => {
+  const userId = req.userId;
+  const limit = req.query.limit || 10;
+
+  const sql = `
+    SELECT 
+      'ride' as type,
+      ds.name || ' → ' || ars.name as title,
+      b.booking_date as created_at as timestamp
+    FROM bookings b
+    JOIN rides r ON b.ride_id = r.id
+    JOIN stations ds ON r.departure_station_id = ds.id
+    JOIN stations ars ON r.arrival_station_id = ars.id
+    WHERE b.passenger_id = ?
+    ORDER BY b.booking_date DESC
     LIMIT ?
   `;
-  db.all(sql, [userId, userId, parseInt(limit)], (err, activities) => {
-    if (err) return res.status(500).json({ success: false, message: 'Erreur serveur' });
-    res.json({ success: true, activities: activities });
+
+  db.all(sql, [userId, parseInt(limit)], (err, activities) => {
+    if (err) {
+      console.error('Erreur activité récente:', err);
+      return res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+
+    res.json({ success: true, activities: activities || [] });
   });
 });
 
