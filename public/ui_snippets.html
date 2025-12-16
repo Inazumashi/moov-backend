@@ -23,6 +23,19 @@
     <div id="ridesList" style="margin-top:12px"></div>
   </div>
 
+  <h3>Chat & Conversations (exemples)</h3>
+  <div>
+    <button id="loadConversations">Charger mes conversations</button>
+    <button id="checkUnread">Voir nombre de messages non lus</button>
+    <div id="conversations" style="margin-top:12px"></div>
+  </div>
+
+  <h3>Stats (dashboard)</h3>
+  <div>
+    <button id="loadStats">Charger stats (dashboard)</button>
+    <pre id="statsOut" style="background:#f7f7f7;padding:8px;border-radius:6px;margin-top:8px"></pre>
+  </div>
+
   <script>
     document.getElementById('togglePw').addEventListener('click', (e) => {
       e.preventDefault();
@@ -117,6 +130,79 @@
       const token = prompt('Token (Bearer) pour l\'authentification');
       if (!token) return alert('Token requis');
       refreshRidesList(token);
+    });
+
+    // --- Chat helpers ---
+    async function apiFetch(path, token, opts = {}) {
+      const headers = opts.headers || {};
+      headers['Authorization'] = `Bearer ${token}`;
+      if (opts.body && !(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+      const res = await fetch(path, Object.assign({}, opts, { headers }));
+      const data = await res.json().catch(() => ({}));
+      return { res, data };
+    }
+
+    document.getElementById('loadConversations').addEventListener('click', async () => {
+      const token = prompt('Token (Bearer) pour l\'authentification');
+      if (!token) return alert('Token requis');
+      const out = document.getElementById('conversations');
+      out.innerHTML = 'Chargement...';
+      const { res, data } = await apiFetch('/api/chat/conversations', token);
+      if (!res.ok) return out.innerHTML = 'Erreur: ' + (data.message || JSON.stringify(data));
+      out.innerHTML = '';
+      data.conversations.forEach(c => {
+        const d = document.createElement('div');
+        d.style.border = '1px solid #ddd'; d.style.padding = '8px'; d.style.marginBottom = '8px';
+        d.innerHTML = `<strong>${c.other_user_name}</strong> — ${c.departure_station} → ${c.arrival_station} <br>Dernier: ${c.last_message || '<aucun>'}`;
+        const open = document.createElement('button');
+        open.textContent = 'Ouvrir';
+        open.style.marginLeft = '8px';
+        open.addEventListener('click', () => openConversation(token, c.id));
+        d.appendChild(open);
+        const del = document.createElement('button');
+        del.textContent = 'Supprimer';
+        del.style.marginLeft = '6px';
+        del.addEventListener('click', async () => {
+          if (!confirm('Supprimer conversation ?')) return;
+          const { res } = await apiFetch(`/api/chat/conversations/${c.id}`, token, { method: 'DELETE' });
+          if (res.ok) { d.remove(); } else alert('Erreur suppression');
+        });
+        d.appendChild(del);
+        out.appendChild(d);
+      });
+    });
+
+    async function openConversation(token, conversationId) {
+      const { res, data } = await apiFetch(`/api/chat/messages/${conversationId}`, token);
+      if (!res.ok) return alert('Erreur chargement messages: ' + (data.message || JSON.stringify(data)));
+      const msgs = data.messages || [];
+      let view = 'Messages:\n\n';
+      msgs.forEach(m => view += `${m.sender_first_name} ${m.sender_last_name}: ${m.message}\n`);
+      const reply = prompt(view + '\nVotre message (laisser vide pour annuler)');
+      if (reply && reply.trim()) {
+        const { res: r2, data: d2 } = await apiFetch('/api/chat/messages', token, { method: 'POST', body: JSON.stringify({ conversationId, message: reply }) });
+        if (!r2.ok) return alert('Erreur envoi: ' + (d2.message || JSON.stringify(d2)));
+        alert('Message envoyé');
+      }
+    }
+
+    document.getElementById('checkUnread').addEventListener('click', async () => {
+      const token = prompt('Token (Bearer) pour l\'authentification');
+      if (!token) return alert('Token requis');
+      const { res, data } = await apiFetch('/api/chat/unread-count', token);
+      if (!res.ok) return alert('Erreur: ' + (data.message || JSON.stringify(data)));
+      alert('Messages non lus: ' + (data.unread_count || 0));
+    });
+
+    // --- Stats ---
+    document.getElementById('loadStats').addEventListener('click', async () => {
+      const token = prompt('Token (Bearer) pour l\'authentification');
+      if (!token) return alert('Token requis');
+      const out = document.getElementById('statsOut');
+      out.textContent = 'Chargement...';
+      const { res, data } = await apiFetch('/api/stats/dashboard', token);
+      if (!res.ok) return out.textContent = 'Erreur: ' + (data.message || JSON.stringify(data));
+      out.textContent = JSON.stringify(data.stats, null, 2);
     });
   </script>
 </body>
