@@ -354,6 +354,14 @@ db.serialize(() => {
     }
   });
 
+  // Ensure `aliases` exists on `stations` for short codes / acronyms (e.g., EMI, ENSIAS)
+  ensureColumn('stations', 'aliases', 'TEXT', (err, added) => {
+    if (err) console.error('❌ Migration check stations.aliases failed:', err.message);
+    else if (added) {
+      console.log('🔧 Migration: column stations.aliases added');
+    }
+  });
+
   // Attendre que toutes les tables soient créées avant d'insérer les données
   setTimeout(() => {
     console.log("📊 Insertion des données initiales...");

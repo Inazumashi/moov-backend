@@ -218,37 +218,80 @@ const rideController = {
     }
   },
 
-  // RECHERCHE RAPIDE (par nom de stations)
+  // RECHERCHE RAPIDE (accepte noms OU IDs de stations)
   quickSearch: async (req, res) => {
     try {
-      const { departure, arrival, date } = req.query;
+      const { departure, arrival, departure_id, arrival_id, date } = req.query;
 
-      if (!departure || !arrival) {
-        return res.status(400).json({
-          success: false,
-          message: 'Les stations de départ et d\'arrivée sont requises'
+      // If station IDs are provided, use the advanced search by station ids
+      if (departure_id || arrival_id) {
+        const searchParams = {
+          departure_station_id: departure_id ? parseInt(departure_id) : undefined,
+          arrival_station_id: arrival_id ? parseInt(arrival_id) : undefined,
+          departure_date: date
+        };
+
+        // Validate IDs
+        if ((searchParams.departure_station_id && isNaN(searchParams.departure_station_id)) ||
+            (searchParams.arrival_station_id && isNaN(searchParams.arrival_station_id))) {
+          return res.status(400).json({ success: false, message: 'IDs de stations invalides' });
+        }
+
+        // Fetch station objects to return as suggestions (if present)
+        const promises = [];
+        let depStation = null;
+        let arrStation = null;
+
+        if (searchParams.departure_station_id) {
+          promises.push(new Promise(resolve => {
+            Station.findById(searchParams.departure_station_id, (err, s) => { depStation = s || null; resolve(); });
+          }));
+        }
+
+        if (searchParams.arrival_station_id) {
+          promises.push(new Promise(resolve => {
+            Station.findById(searchParams.arrival_station_id, (err, s) => { arrStation = s || null; resolve(); });
+          }));
+        }
+
+        Promise.all(promises).then(() => {
+          Ride.searchAdvanced(searchParams, (err, result) => {
+            if (err) {
+              console.error('Erreur recherche rapide par ID:', err);
+              return res.status(500).json({ success: false, message: 'Erreur lors de la recherche' });
+            }
+
+            res.json({
+              success: true,
+              rides: result.rides || [],
+              suggested_departures: depStation ? [depStation] : [],
+              suggested_arrivals: arrStation ? [arrStation] : [],
+              pagination: result.pagination || {},
+              count: (result.rides || []).length
+            });
+          });
+        }).catch(err => {
+          console.error('Erreur récupération stations:', err);
+          res.status(500).json({ success: false, message: 'Erreur serveur' });
         });
+
+        return;
+      }
+
+      // Fallback: original behaviour using names (departure, arrival)
+      if (!departure || !arrival) {
+        return res.status(400).json({ success: false, message: 'Les stations de départ et d\'arrivée sont requises' });
       }
 
       // D'abord, trouver les stations qui correspondent
       Station.search(departure, 5, req.userId, (err, departureStations) => {
         if (err || departureStations.length === 0) {
-          return res.json({
-            success: true,
-            message: 'Aucune station de départ trouvée',
-            rides: [],
-            suggested_departures: []
-          });
+          return res.json({ success: true, message: 'Aucune station de départ trouvée', rides: [], suggested_departures: [] });
         }
 
         Station.search(arrival, 5, req.userId, (err, arrivalStations) => {
           if (err || arrivalStations.length === 0) {
-            return res.json({
-              success: true,
-              message: 'Aucune station d\'arrivée trouvée',
-              rides: [],
-              suggested_arrivals: []
-            });
+            return res.json({ success: true, message: 'Aucune station d\'arrivée trouvée', rides: [], suggested_arrivals: [] });
           }
 
           // Chercher les trajets pour chaque combinaison possible
@@ -258,50 +301,30 @@ const rideController = {
           departureStations.forEach(depStation => {
             arrivalStations.forEach(arrStation => {
               if (depStation.id !== arrStation.id) {
-                searchPromises.push(
-                  new Promise((resolve) => {
-                    Ride.searchByStations(
-                      depStation.name,
-                      arrStation.name,
-                      date,
-                      (err, rides) => {
-                        if (!err && rides) {
-                          allRides.push(...rides);
-                        }
-                        resolve();
-                      }
-                    );
-                  })
-                );
+                searchPromises.push(new Promise((resolve) => {
+                  Ride.searchByStations(depStation.name, arrStation.name, date, (err, rides) => {
+                    if (!err && rides) allRides.push(...rides);
+                    resolve();
+                  });
+                }));
               }
             });
           });
 
           Promise.all(searchPromises).then(() => {
             // Éliminer les doublons
-            const uniqueRides = Array.from(
-              new Map(allRides.map(ride => [ride.id, ride])).values()
-            );
+            const uniqueRides = Array.from(new Map(allRides.map(ride => [ride.id, ride])).values());
 
             // Trier par date
             uniqueRides.sort((a, b) => new Date(a.departure_date) - new Date(b.departure_date));
 
-            res.json({
-              success: true,
-              rides: uniqueRides,
-              suggested_departures: departureStations,
-              suggested_arrivals: arrivalStations,
-              count: uniqueRides.length
-            });
+            res.json({ success: true, rides: uniqueRides, suggested_departures: departureStations, suggested_arrivals: arrivalStations, count: uniqueRides.length });
           });
         });
       });
     } catch (error) {
       console.error('Erreur recherche rapide:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Erreur serveur'
-      });
+      res.status(500).json({ success: false, message: 'Erreur serveur' });
     }
   },
 
@@ -413,7 +436,8 @@ const rideController = {
         // Ajouter flag can_delete = true si pas de réservations actives
         const mapped = (rides || []).map(r => ({
           ...r,
-          can_delete: !(r.active_bookings && r.active_bookings > 0)
+          can_delete: !(r.active_bookings && r.active_bookings > 0),
+          can_edit: false
         }));
 
         res.json({
@@ -522,6 +546,7 @@ const rideController = {
     try {
       const userId = req.userId;
       const rideId = req.params.id;
+      const permanent = (req.query && (req.query.permanent === '1' || req.query.permanent === 'true')) || (req.body && req.body.permanent === true);
 
       // Vérifier que l'utilisateur est le conducteur
       const checkSql = `SELECT id, status FROM rides WHERE id = ? AND driver_id = ?`;
@@ -544,35 +569,34 @@ const rideController = {
         const bookingsSql = `SELECT COUNT(*) as count FROM bookings WHERE ride_id = ? AND status IN ('pending', 'confirmed')`;
         db.get(bookingsSql, [rideId], (err, result) => {
           if (err) {
-            return res.status(500).json({
-              success: false,
-              message: 'Erreur serveur'
-            });
+            return res.status(500).json({ success: false, message: 'Erreur serveur' });
           }
 
           if (result.count > 0) {
-            return res.status(400).json({
-              success: false,
-              message: 'Impossible d\'annuler un trajet avec des réservations actives'
-            });
+            return res.status(400).json({ success: false, message: 'Impossible d\'annuler ou supprimer un trajet avec des réservations actives' });
           }
 
-          // Annuler le trajet
-          const updateSql = `UPDATE rides SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
-          db.run(updateSql, [rideId], (err) => {
-            if (err) {
-              console.error('Erreur annulation trajet:', err);
-              return res.status(500).json({
-                success: false,
-                message: 'Erreur lors de l\'annulation'
-              });
-            }
-
-            res.json({
-              success: true,
-              message: 'Trajet annulé avec succès'
+          if (permanent) {
+            // Supprimer définitivement
+            db.run(`DELETE FROM rides WHERE id = ?`, [rideId], function(err) {
+              if (err) {
+                console.error('Erreur suppression trajet (permanent):', err);
+                return res.status(500).json({ success: false, message: 'Erreur lors de la suppression' });
+              }
+              return res.json({ success: true, message: 'Trajet supprimé définitivement' });
             });
-          });
+          } else {
+            // Annuler le trajet (soft)
+            const updateSql = `UPDATE rides SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
+            db.run(updateSql, [rideId], (err) => {
+              if (err) {
+                console.error('Erreur annulation trajet:', err);
+                return res.status(500).json({ success: false, message: 'Erreur lors de l\'annulation' });
+              }
+
+              res.json({ success: true, message: 'Trajet annulé avec succès' });
+            });
+          }
         });
       });
     } catch (error) {

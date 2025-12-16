@@ -18,7 +18,10 @@
 
   <h3>Example Delete Ride button (calls API)</h3>
   <p>Replace <code>RIDE_ID</code> and include a valid `Authorization: Bearer &lt;token&gt;` header.</p>
-  <button id="deleteRide" class="btn-delete">Supprimer le trajet</button>
+  <div>
+    <button id="refreshRides">Charger mes trajets</button>
+    <div id="ridesList" style="margin-top:12px"></div>
+  </div>
 
   <script>
     document.getElementById('togglePw').addEventListener('click', (e) => {
@@ -33,26 +36,87 @@
       }
     });
 
-    document.getElementById('deleteRide').addEventListener('click', async () => {
-      const rideId = prompt('ID du trajet à supprimer (ex: 3)');
-      if (!rideId) return;
-
-      const token = prompt('Token (Bearer) pour l\'authentification');
-      if (!token) return alert('Token requis');
-
+    // Helper to perform delete (permanent) and show result
+    async function deleteRide(rideId, token) {
       try {
-        const res = await fetch(`/api/rides/${rideId}/remove`, {
+        // Try the explicit /remove route first
+        let url = `/api/rides/${rideId}/remove`;
+        let res = await fetch(url, {
           method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
+          headers: { 'Authorization': `Bearer ${token}` }
         });
+
+        // If the /remove route returns 404 or 403, try the alternative with query param
+        if (res.status === 404 || res.status === 403 || res.status === 405) {
+          url = `/api/rides/${rideId}?permanent=1`;
+          res = await fetch(url, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+        }
+
         const data = await res.json();
-        alert(JSON.stringify(data));
+        if (res.ok) {
+          alert(data.message || 'Trajet supprimé');
+          refreshRidesList(token);
+        } else {
+          alert('Erreur: ' + (data.message || JSON.stringify(data)));
+        }
       } catch (err) {
         alert('Erreur lors de la requête: ' + err.message);
       }
+    }
+
+    // Render rides and attach only a delete button (no edit)
+    async function refreshRidesList(token) {
+      const container = document.getElementById('ridesList');
+      container.innerHTML = 'Chargement...';
+
+      try {
+        const res = await fetch('/api/rides/my-rides', { headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        if (!res.ok) {
+          container.innerHTML = 'Erreur: ' + (data.message || JSON.stringify(data));
+          return;
+        }
+
+        const rides = data.rides || [];
+        if (rides.length === 0) {
+          container.innerHTML = '<i>Aucun trajet trouvé.</i>';
+          return;
+        }
+
+        container.innerHTML = '';
+        rides.forEach(r => {
+          const div = document.createElement('div');
+          div.style.border = '1px solid #ddd';
+          div.style.padding = '8px';
+          div.style.marginBottom = '8px';
+
+          const title = document.createElement('div');
+          title.textContent = `${r.id} — ${r.departure_station} → ${r.arrival_station} (${r.departure_date})`;
+          div.appendChild(title);
+
+          const btn = document.createElement('button');
+          btn.className = 'btn-delete';
+          btn.textContent = 'Supprimer';
+          btn.disabled = !r.can_delete;
+          btn.title = r.can_delete ? 'Supprimer définitivement ce trajet' : 'Impossible: réservations actives';
+          btn.addEventListener('click', () => {
+            if (!confirm('Confirmer la suppression définitive du trajet #' + r.id + ' ?')) return;
+            deleteRide(r.id, token);
+          });
+
+          div.appendChild(btn);
+          container.appendChild(div);
+        });
+      } catch (err) {
+        container.innerHTML = 'Erreur: ' + err.message;
+      }
+    }
+
+    // Wire the refresh button to prompt for token then load rides
+    document.getElementById('refreshRides').addEventListener('click', async () => {
+      const token = prompt('Token (Bearer) pour l\'authentification');
+      if (!token) return alert('Token requis');
+      refreshRidesList(token);
     });
   </script>
 </body>

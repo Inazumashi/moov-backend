@@ -22,7 +22,8 @@ router.use(authMiddleware);
 router.post('/', rideController.create);
 
 // ✅ MISE À JOUR DE TRAJET
-router.put('/:id', rideController.update);
+// Route de modification supprimée pour désactiver l'édition côté API
+// (front-end doit afficher seulement le bouton Supprimer)
 
 // ✅ SUPPRESSION DE TRAJET (ANNULATION)
 router.delete('/:id', rideController.cancel);
