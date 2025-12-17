@@ -4,7 +4,8 @@ const db = require('../config/db');
 const User = {
   // Trouver par email (utilisé pour login — récupère le mot de passe)
   findByEmail: (email, callback) => {
-    // Match emails case-insensitively using LOWER() for portability
+    // Match
+    //  emails case-insensitively using LOWER() for portability
     const sql = 'SELECT * FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1';
     db.get(sql, [email], callback);
   },
@@ -99,6 +100,13 @@ const User = {
   findUniversityByEmail: (email, callback) => {
     const sql = `SELECT * FROM universities WHERE LOWER(?) LIKE '%' || LOWER(domain) AND is_active = 1`;
     db.get(sql, [email], callback);
+  },
+  // Activer le mode premium
+  activatePremium: (userId, callback) => {
+    // Met à jour le status premium à 1 (True)
+    // Assure-toi que ta base de données a bien la colonne 'premium_status'
+    const sql = `UPDATE users SET premium_status = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
+    db.run(sql, [userId], callback);
   }
 };
 
