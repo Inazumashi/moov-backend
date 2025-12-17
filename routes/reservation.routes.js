@@ -167,7 +167,7 @@ router.post('/', (req, res) => {
 });
 
 // Annuler une réservation
-router.patch('/:id/cancel', (req, res) => {
+router.put('/:id/cancel', (req, res) => {
   const userId = req.userId;
   const reservationId = req.params.id;
 
