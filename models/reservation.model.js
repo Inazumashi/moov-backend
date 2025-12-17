@@ -1,66 +1,75 @@
 const db = require('../config/db');
 const util = require('util');
 
-// Promisification des méthodes nécessaires si ce n'est pas déjà fait
+// Promisification
 const dbGet = util.promisify(db.get);
 const dbRun = util.promisify(db.run);
 const dbAll = util.promisify(db.all);
 
 const Reservation = {
-  // Créer une réservation (utilise Promise pour gérer la transaction)
+  // Créer une réservation - VERSION CORRIGÉE
   create: (reservationData) => {
     return new Promise(async (resolve, reject) => {
       const { rideId, passengerId, seatsBooked } = reservationData;
 
+      console.log('🔧 Reservation.create appelé avec:', { rideId, passengerId, seatsBooked });
+
       try {
         // 1. Vérifier que le trajet existe et a des places
-        const ride = await dbGet(`SELECT available_seats, price_per_seat FROM rides WHERE id = ? AND status = 'active'`,
-          [rideId]);
+        const ride = await dbGet(
+          `SELECT available_seats, price_per_seat FROM rides WHERE id = ? AND status IN ('active', 'pending')`, 
+          [rideId]
+        );
 
         if (!ride) {
+          console.log('❌ Ride non trouvé');
           return reject(new Error('Trajet non trouvé ou inactif'));
         }
 
-        // 2. Vérifier les places disponibles
+        console.log('✅ Ride trouvé - places:', ride.available_seats, 'prix:', ride.price_per_seat);
+
         if (ride.available_seats < seatsBooked) {
+          console.log('❌ Pas assez de places');
           return reject(new Error(`Pas assez de places disponibles. Seulement ${ride.available_seats} restantes.`));
         }
 
         const totalPrice = ride.price_per_seat * seatsBooked;
+        console.log('💰 Prix total:', totalPrice);
 
-        // Début de la transaction
-        await dbRun(`BEGIN TRANSACTION`);
+        // 2. Diminuer les places disponibles
+        console.log('🔄 Mise à jour des places disponibles...');
+        await dbRun(`UPDATE rides SET available_seats = available_seats - ? WHERE id = ?`, 
+          [seatsBooked, rideId]);
 
-        try {
-          // Diminuer les places disponibles
-          await dbRun(`UPDATE rides SET available_seats = available_seats - ? WHERE id = ?`,
-            [seatsBooked, rideId]);
-
-          // Créer la réservation
-          const insertResult = await dbRun(`INSERT INTO bookings (ride_id, passenger_id, seats_booked, total_price) 
-                                           VALUES (?, ?, ?, ?)`,
-            [rideId, passengerId, seatsBooked, totalPrice]);
-
-          await dbRun(`COMMIT`);
-
+        // 3. Créer la réservation avec une fonction callback pour obtenir lastID
+        console.log('🔄 Création de la réservation...');
+        
+        // ✅ SOLUTION : Utiliser db.run avec callback (pas promisifié)
+        const insertSql = `INSERT INTO bookings (ride_id, passenger_id, seats_booked, total_price) 
+                           VALUES (?, ?, ?, ?)`;
+        
+        db.run(insertSql, [rideId, passengerId, seatsBooked, totalPrice], function(err) {
+          if (err) {
+            console.error('❌ Erreur insertion:', err);
+            return reject(err);
+          }
+          
+          // ✅ this.lastID est disponible ici
+          console.log('✅ Réservation créée avec ID:', this.lastID);
+          
           resolve({
-            id: insertResult.lastID, // lastID est accessible via la méthode promisifiée dbRun
+            id: this.lastID,
             totalPrice,
             seatsBooked
           });
-
-        } catch (txnError) {
-          // Gérer le rollback en cas d'erreur de transaction
-          await dbRun(`ROLLBACK`);
-          reject(txnError);
-        }
+        });
 
       } catch (error) {
+        console.error('❌ Erreur dans Reservation.create:', error);
         reject(error);
       }
     });
   },
-
   // Annuler une réservation (promisifiée et transactionnelle)
   cancel: (bookingId, passengerId, reason = null) => {
     return new Promise(async (resolve, reject) => {

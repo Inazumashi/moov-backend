@@ -1,14 +1,11 @@
 const Reservation = require('../models/reservation.model');
 const User = require('../models/user.model');
-const db = require('../config/db'); // Assurez-vous que db.get/db.run sont promisifiés ici ou ailleurs (voir note ⚠️)
+const db = require('../config/db');
 const util = require('util');
 
-// ⚠️ NOTE CRITIQUE : Pour que async/await fonctionne avec sqlite3,
-// il faut Promisifier db.get, db.run et db.all si ce n'est pas déjà fait dans db.js.
-// Exemple de Promisification :
+// Promisification
 db.get = util.promisify(db.get);
 db.run = util.promisify(db.run);
-
 
 const reservationController = {
   // Réserver un trajet
@@ -16,30 +13,48 @@ const reservationController = {
     const passengerId = req.userId;
     const { rideId, seatsBooked = 1 } = req.body;
 
+    console.log('📝 Réservation - Données reçues:', { passengerId, rideId, seatsBooked });
+
     if (!rideId) {
       return res.status(400).json({ success: false, message: 'ID du trajet requis' });
     }
 
     try {
-      // Vérifier l'existence et le statut du trajet
-      const rideSql = `SELECT driver_id FROM rides WHERE id = ? AND status = 'active'`;
+      // ✅ CORRECTION : Accepter les trajets avec status 'pending' OU 'active'
+      const rideSql = `SELECT driver_id, available_seats, price_per_seat, status 
+                       FROM rides 
+                       WHERE id = ? 
+                       AND status IN ('active', 'pending')`;
+      
+      console.log('🔍 Recherche trajet avec ID:', rideId);
       const ride = await db.get(rideSql, [rideId]);
 
+      console.log('📊 Trajet trouvé:', ride);
+
       if (!ride) {
-        return res.status(404).json({ success: false, message: 'Trajet non trouvé ou inactif' });
+        return res.status(404).json({ 
+          success: false, 
+          message: 'Trajet non trouvé ou non disponible' 
+        });
       }
 
       if (ride.driver_id === passengerId) {
-        return res.status(400).json({ success: false, message: 'Vous ne pouvez pas réserver votre propre trajet' });
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Vous ne pouvez pas réserver votre propre trajet' 
+        });
       }
 
-      // Vérifier si déjà réservé (modèle promisifié)
+      // Vérifier si déjà réservé
       const hasBooked = await Reservation.hasBooked(rideId, passengerId);
       if (hasBooked) {
-        return res.status(400).json({ success: false, message: 'Vous avez déjà réservé ce trajet' });
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Vous avez déjà réservé ce trajet' 
+        });
       }
 
-      // Créer la réservation (modèle promisifié qui gère la transaction)
+      // Créer la réservation
       const result = await Reservation.create({ rideId, passengerId, seatsBooked });
 
       res.status(201).json({
@@ -49,8 +64,7 @@ const reservationController = {
       });
 
     } catch (error) {
-      console.error('Erreur réservation:', error.message || error);
-      // Retourne le message d'erreur spécifique si c'est une erreur métier du modèle
+      console.error('❌ Erreur réservation:', error.message || error);
       const statusCode = error.message.includes('places') || error.message.includes('Trajet') ? 400 : 500;
       res.status(statusCode).json({
         success: false,
@@ -90,7 +104,7 @@ const reservationController = {
     try {
       const reservations = await Reservation.findByPassenger(passengerId, status);
 
-      // Grouper par statut pour la vue front-end
+      // Grouper par statut
       const grouped = {
         upcoming: reservations.filter(r =>
           r.status === 'confirmed' &&
@@ -122,7 +136,6 @@ const reservationController = {
     const { rideId } = req.params;
 
     try {
-      // 1. Vérifier que le conducteur possède ce trajet
       const checkSql = `SELECT id FROM rides WHERE id = ? AND driver_id = ?`;
       const ride = await db.get(checkSql, [rideId, driverId]);
 
@@ -133,7 +146,6 @@ const reservationController = {
         });
       }
 
-      // 2. Récupérer les réservations
       const reservations = await Reservation.findByRide(rideId);
 
       res.json({
@@ -150,27 +162,27 @@ const reservationController = {
     }
   },
 
-  // Marquer une réservation comme complétée (conducteur ou admin)
+  // Marquer comme complété
   complete: async (req, res) => {
     const userId = req.userId;
-    const { id } = req.params; // booking id
+    const { id } = req.params;
 
     try {
-      // 1. Récupérer la réservation + driver
-      const sql = `SELECT b.*, r.driver_id FROM bookings b JOIN rides r ON b.ride_id = r.id WHERE b.id = ?`;
+      const sql = `SELECT b.*, r.driver_id 
+                   FROM bookings b 
+                   JOIN rides r ON b.ride_id = r.id 
+                   WHERE b.id = ?`;
       const booking = await db.get(sql, [id]);
 
       if (!booking) {
         return res.status(404).json({ success: false, message: 'Réservation non trouvée' });
       }
 
-      // 2. Récupérer l'utilisateur (pour vérifier rôle admin)
-      // NOTE: Le modèle User.findById est supposé retourner une Promise ou être promisifié.
       const user = await new Promise((resolve, reject) => {
-          User.findById(userId, (err, u) => {
-            if (err) return reject(err);
-            resolve(u);
-          });
+        User.findById(userId, (err, u) => {
+          if (err) return reject(err);
+          resolve(u);
+        });
       });
 
       const isAdmin = user && user.profile_type === 'admin';
@@ -185,25 +197,30 @@ const reservationController = {
       }
 
       if (booking.status === 'cancelled') {
-        return res.status(400).json({ success: false, message: 'Impossible de marquer une réservation annulée comme complétée' });
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Impossible de marquer une réservation annulée comme complétée' 
+        });
       }
 
-      // 3. Mise à jour de la réservation
-      const updateSql = `UPDATE bookings SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?`;
+      const updateSql = `UPDATE bookings 
+                         SET status = 'completed', completed_at = CURRENT_TIMESTAMP 
+                         WHERE id = ?`;
       await db.run(updateSql, [id]);
 
-      // 4. Optionnel: incrémenter compteur conducteur (sans attendre le résultat)
       if (booking.driver_id) {
-        db.run(`UPDATE users SET total_trips_as_driver = COALESCE(total_trips_as_driver,0) + 1 WHERE id = ?`, [booking.driver_id])
-          .catch(err => console.error('Erreur incrément total_trips_as_driver:', err));
+        db.run(`UPDATE users 
+                SET total_trips_as_driver = COALESCE(total_trips_as_driver,0) + 1 
+                WHERE id = ?`, 
+          [booking.driver_id]
+        ).catch(err => console.error('Erreur incrément:', err));
       }
 
-      // 5. Retourner la réservation mise à jour
-      const updated = await db.get(`SELECT b.* FROM bookings b WHERE b.id = ?`, [id]);
+      const updated = await db.get(`SELECT * FROM bookings WHERE id = ?`, [id]);
 
       res.json({ success: true, reservation: updated });
     } catch (error) {
-      console.error('Erreur complete reservation:', error);
+      console.error('Erreur complete:', error);
       res.status(500).json({ success: false, message: 'Erreur serveur' });
     }
   }
