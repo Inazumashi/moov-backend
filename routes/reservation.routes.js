@@ -1,33 +1,37 @@
-// routes/reservation.routes.js - VERSION CORRIGÉE
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/auth.middleware');
 const reservationController = require('../controllers/reservation.controller');
 
-// ✅ TOUTES LES ROUTES NÉCESSITENT L'AUTHENTIFICATION
 router.use(authMiddleware);
 
-// ✅ CRÉER UNE RÉSERVATION (UTILISE LE CONTRÔLEUR)
+// ✅ CRÉER UNE RÉSERVATION
 router.post('/', reservationController.create);
 
-// ✅ MES RÉSERVATIONS
+// ✅ MES RÉSERVATIONS (PASSAGER)
 router.get('/my-reservations', reservationController.myReservations);
 
-// ✅ RÉSERVATIONS D'UN TRAJET (POUR LE CONDUCTEUR)
-router.get('/ride/:rideId', reservationController.rideReservations);
-router.get('/for-ride/:rideId', reservationController.rideReservations); // Alias pour compatibilité frontend
+// ✅ RÉSERVATIONS D'UN TRAJET (CONDUCTEUR) - Route principale
+router.get('/for-ride/:rideId', reservationController.getRideReservations);
+router.get('/ride/:rideId', reservationController.getRideReservations); // Alias
 
-// ✅ CONFIRMER/REFUSER (CONDUCTEUR)
+// ✅ CONFIRMER UNE RÉSERVATION (pending → confirmed)
 router.put('/:id/confirm', reservationController.confirm);
+
+// ✅ TERMINER UNE RÉSERVATION (confirmed → completed)
+router.put('/:id/complete', reservationController.completeReservation);
+router.patch('/:id/complete', reservationController.completeReservation); // Alias
+
+// ✅ REFUSER UNE RÉSERVATION
 router.put('/:id/reject', reservationController.reject);
 
-// ✅ ANNULER UNE RÉSERVATION
+// ✅ ANNULER UNE RÉSERVATION (PASSAGER)
 router.put('/:id/cancel', reservationController.cancel);
 
-// ✅ MARQUER COMME COMPLÉTÉE
-router.patch('/:id/complete', reservationController.complete);
+// ✅ DEMANDES EN ATTENTE (CONDUCTEUR)
+router.get('/driver/requests', reservationController.getDriverRequests);
 
-// ✅ DÉTAILS D'UNE RÉSERVATION (ANCIENNE ROUTE CONSERVÉE)
+// ✅ DÉTAILS D'UNE RÉSERVATION
 router.get('/:id', (req, res) => {
   const userId = req.userId;
   const reservationId = req.params.id;
