@@ -15,6 +15,46 @@ const transporter = nodemailer.createTransport({
 });
 
 const authController = {
+  // Changer le mot de passe (Connecté)
+  changePassword: async (req, res) => {
+    const userId = req.userId;
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Tous les champs sont requis' });
+    }
+
+    try {
+      // 1. Récupérer l'utilisateur avec son hash
+      const sql = 'SELECT password FROM users WHERE id = ?';
+      const user = await db.get(sql, [userId]);
+
+      if (!user) return res.status(404).json({ success: false, message: 'Utilisateur non trouvé' });
+
+      // 2. Vérifier l'ancien mot de passe
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatch) {
+        return res.status(401).json({ success: false, message: 'Mot de passe actuel incorrect' });
+      }
+
+      // 3. Valider le nouveau mot de passe
+      if (newPassword.length < 8) {
+        return res.status(400).json({ success: false, message: 'Le mot de passe doit contenir au moins 8 caractères' });
+      }
+
+      // 4. Hasher et sauvegarder
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+      await db.run('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, userId]);
+
+      res.json({ success: true, message: 'Mot de passe mis à jour avec succès' });
+    } catch (error) {
+      console.error('Erreur changement mot de passe:', error);
+      res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+  },
+
   // INSCRIPTION ÉTAPE 1: Vérification email universitaire
   checkUniversityEmail: async (req, res) => {
     try {
@@ -172,98 +212,99 @@ const authController = {
   },
 
   // INSCRIPTION COMPLÈTE - VERSION RÉELLE AVEC VÉRIFICATION
-register: async (req, res) => {
-  try {
-    const { email, password, first_name, last_name, phone, university, profile_type, student_id: providedStudentId } = req.body;
+  register: async (req, res) => {
+    try {
+      const { email, password, first_name, last_name, phone, university, profile_type, student_id: providedStudentId } = req.body;
 
-    // Validation
-    if (!email || !password || !first_name || !last_name || !phone || !university || !profile_type) {
-      return res.status(400).json({
-        success: false,
-        message: 'Tous les champs obligatoires sont requis'
-      });
-    }
-
-    // ✅ CORRECTION : Créer une nouvelle variable pour student_id
-    let finalStudentId = providedStudentId;
-    
-    if (profile_type === 'student') {
-      // Générer un student_id automatique si non fourni
-      if (!finalStudentId) {
-        const emailPrefix = email.split('@')[0];
-        const timestamp = Date.now().toString().slice(-6);
-        finalStudentId = `${emailPrefix}_${timestamp}`;
-      }
-    }
-
-    // Vérifier si email existe déjà
-    User.findByEmail(email, async (err, existingUser) => {
-      if (err) {
-        return res.status(500).json({
-          success: false,
-          message: 'Erreur serveur'
-        });
-      }
-
-      if (existingUser) {
+      // Validation
+      // Validation (phone is now optional)
+      if (!email || !password || !first_name || !last_name || !university || !profile_type) {
         return res.status(400).json({
           success: false,
-          message: 'Cet email est déjà utilisé'
+          message: 'Tous les champs obligatoires sont requis (Email, Mot de passe, Nom, Prénom, Université, Profil)'
         });
       }
 
-      // Validation de la complexité du mot de passe
-      const pwdRegex = /(?=^.{8,}$)(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).*/;
-      if (!pwdRegex.test(password)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Le mot de passe doit faire au moins 8 caractères et contenir une majuscule, un chiffre et un symbole'
-        });
+      // ✅ CORRECTION : Créer une nouvelle variable pour student_id
+      let finalStudentId = providedStudentId;
+
+      if (profile_type === 'student') {
+        // Générer un student_id automatique si non fourni
+        if (!finalStudentId) {
+          const emailPrefix = email.split('@')[0];
+          const timestamp = Date.now().toString().slice(-6);
+          finalStudentId = `${emailPrefix}_${timestamp}`;
+        }
       }
 
-      // Hacher mot de passe
-      const hashedPassword = await bcrypt.hash(password, 12);
-
-      // ✅ CRÉER UTILISATEUR NON VÉRIFIÉ
-      User.create({
-        email,
-        password: hashedPassword,
-        first_name,
-        last_name,
-        phone,
-        university,
-        profile_type,
-        student_id: finalStudentId,
-        is_verified: 0 // ⚠️ IMPORTANT : Non vérifié au départ
-      }, (err, newUser) => {
+      // Vérifier si email existe déjà
+      User.findByEmail(email, async (err, existingUser) => {
         if (err) {
-          console.error('Erreur création utilisateur:', err);
           return res.status(500).json({
             success: false,
-            message: 'Erreur lors de la création du compte'
+            message: 'Erreur serveur'
           });
         }
 
-        // ✅ GÉNÉRER ET ENVOYER LE CODE DE VÉRIFICATION RÉEL
-        const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-        // REMPLACE PAR :
-        // REMPLACE PAR :
-        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-        const expiresAtISO = expiresAt.toISOString(); // Format SQLite compatible
+        if (existingUser) {
+          return res.status(400).json({
+            success: false,
+            message: 'Cet email est déjà utilisé'
+          });
+        }
 
-        User.saveVerificationCode(email, verificationCode, expiresAtISO, async (err) => {
+        // Validation de la complexité du mot de passe
+        const pwdRegex = /(?=^.{8,}$)(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).*/;
+        if (!pwdRegex.test(password)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Le mot de passe doit faire au moins 8 caractères et contenir une majuscule, un chiffre et un symbole'
+          });
+        }
+
+        // Hacher mot de passe
+        const hashedPassword = await bcrypt.hash(password, 12);
+
+        // ✅ CRÉER UTILISATEUR NON VÉRIFIÉ
+        User.create({
+          email,
+          password: hashedPassword,
+          first_name,
+          last_name,
+          phone: phone || null,
+          university,
+          profile_type,
+          student_id: finalStudentId,
+          is_verified: 0 // ⚠️ IMPORTANT : Non vérifié au départ
+        }, (err, newUser) => {
           if (err) {
-            console.error('Erreur sauvegarde code:', err);
-            // On continue quand même, l'utilisateur pourra redemander un code
+            console.error('Erreur création utilisateur:', err);
+            return res.status(500).json({
+              success: false,
+              message: 'Erreur lors de la création du compte'
+            });
           }
 
-          // ✅ ENVOYER EMAIL DE VÉRIFICATION RÉEL
-          try {
-            await transporter.sendMail({
-              from: '"Moov Université" <noreply@moov-university.com>',
-              to: email,
-              subject: 'Vérifiez votre email - Moov',
-              html: `
+          // ✅ GÉNÉRER ET ENVOYER LE CODE DE VÉRIFICATION RÉEL
+          const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+          // REMPLACE PAR :
+          // REMPLACE PAR :
+          const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+          const expiresAtISO = expiresAt.toISOString(); // Format SQLite compatible
+
+          User.saveVerificationCode(email, verificationCode, expiresAtISO, async (err) => {
+            if (err) {
+              console.error('Erreur sauvegarde code:', err);
+              // On continue quand même, l'utilisateur pourra redemander un code
+            }
+
+            // ✅ ENVOYER EMAIL DE VÉRIFICATION RÉEL
+            try {
+              await transporter.sendMail({
+                from: '"Moov Université" <noreply@moov-university.com>',
+                to: email,
+                subject: 'Vérifiez votre email - Moov',
+                html: `
                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                   <h2 style="color: #1E3A8A;">Bienvenue sur Moov ! 🚗</h2>
                   <p>Votre compte a été créé avec succès.</p>
@@ -277,18 +318,18 @@ register: async (req, res) => {
                   <p style="color: #666; font-size: 12px;">© ${new Date().getFullYear()} Moov - Covoiturage Universitaire</p>
                 </div>
               `
-            });
-            console.log(`✅ Email de vérification envoyé à ${email}`);
-          } catch (emailError) {
-            console.error('❌ Erreur envoi email vérification:', emailError);
-          }
+              });
+              console.log(`✅ Email de vérification envoyé à ${email}`);
+            } catch (emailError) {
+              console.error('❌ Erreur envoi email vérification:', emailError);
+            }
 
-          // ✅ ENVOYER EMAIL DE BIENVENUE AUSSI
-          transporter.sendMail({
-            from: '"Moov Université" <welcome@moov-university.com>',
-            to: email,
-            subject: 'Bienvenue sur Moov ! 🎉',
-            html: `
+            // ✅ ENVOYER EMAIL DE BIENVENUE AUSSI
+            transporter.sendMail({
+              from: '"Moov Université" <welcome@moov-university.com>',
+              to: email,
+              subject: 'Bienvenue sur Moov ! 🎉',
+              html: `
               <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
                 <h2 style="color: #1E3A8A;">Bonjour ${first_name} ! 👋</h2>
                 <p>Votre compte Moov a été créé avec succès !</p>
@@ -313,36 +354,36 @@ register: async (req, res) => {
                 </p>
               </div>
             `
-          }).catch(err => console.error('Erreur email de bienvenue:', err));
+            }).catch(err => console.error('Erreur email de bienvenue:', err));
 
-          // ✅ RÉPONSE POUR FLUTTER
-          res.status(201).json({
-            success: true,
-            message: 'Compte créé ! Vérifiez votre email pour le code.',
-            user: {
-              id: newUser.id,
-              email: newUser.email,
-              first_name: newUser.first_name,
-              last_name: newUser.last_name,
-              university,
-              profile_type,
-              is_verified: false // ⚠️ Important : dire à Flutter que c'est pas vérifié
-            },
-            token: generateToken(newUser.id), // Token temporaire
-            needs_verification: true, // ⚠️ Important : Flutter doit afficher l'écran de vérification
-            debug_code: process.env.NODE_ENV === 'development' ? verificationCode : undefined
+            // ✅ RÉPONSE POUR FLUTTER
+            res.status(201).json({
+              success: true,
+              message: 'Compte créé ! Vérifiez votre email pour le code.',
+              user: {
+                id: newUser.id,
+                email: newUser.email,
+                first_name: newUser.first_name,
+                last_name: newUser.last_name,
+                university,
+                profile_type,
+                is_verified: false // ⚠️ Important : dire à Flutter que c'est pas vérifié
+              },
+              token: generateToken(newUser.id), // Token temporaire
+              needs_verification: true, // ⚠️ Important : Flutter doit afficher l'écran de vérification
+              debug_code: verificationCode
+            });
           });
         });
       });
-    });
-  } catch (error) {
-    console.error('Erreur inscription:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erreur serveur'
-    });
-  }
-},
+    } catch (error) {
+      console.error('Erreur inscription:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Erreur serveur'
+      });
+    }
+  },
   // CONNEXION
   login: async (req, res) => {
     try {
@@ -372,7 +413,7 @@ register: async (req, res) => {
 
         // Vérifier mot de passe
         const isPasswordValid = await bcrypt.compare(password, user.password);
-        
+
         if (!isPasswordValid) {
           return res.status(401).json({
             success: false,
@@ -600,6 +641,89 @@ register: async (req, res) => {
         success: false,
         message: 'Erreur serveur'
       });
+    }
+  },
+
+
+
+  // MOT DE PASSE OUBLIÉ
+  forgotPassword: async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ success: false, message: 'Email requis' });
+
+      User.findByEmail(email, (err, user) => {
+        if (err) return res.status(500).json({ success: false, message: 'Erreur serveur' });
+        if (!user) {
+          // Pour sécurité, on dit quand même que l'email a été envoyé si le compte n'existe pas
+          return res.json({ success: true, message: 'Si ce compte existe, un email a été envoyé.' });
+        }
+
+        // Générer code
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+
+        User.savePasswordResetCode(email, code, expiresAt, async (err) => {
+          if (err) return res.status(500).json({ success: false, message: 'Erreur serveur' });
+
+          try {
+            await transporter.sendMail({
+              from: '"Moov Support" <noreply@moov-university.com>',
+              to: email,
+              subject: 'Réinitialisation de mot de passe',
+              html: `
+                <h3>Réinitialisation de mot de passe</h3>
+                <p>Utilisez le code suivant pour réinitialiser votre mot de passe :</p>
+                <h1>${code}</h1>
+                <p>Ce code expire dans 15 minutes.</p>
+              `
+            });
+            res.json({ success: true, message: 'Email envoyé', debug_code: process.env.NODE_ENV === 'development' ? code : undefined });
+          } catch (e) {
+            console.error('Email error:', e);
+            res.status(500).json({ success: false, message: "Erreur lors de l'envoi de l'email" });
+          }
+        });
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+  },
+
+  // RÉINITIALISER MOT DE PASSE
+  resetPassword: async (req, res) => {
+    try {
+      const { email, code, newPassword } = req.body;
+      if (!email || !code || !newPassword) {
+        return res.status(400).json({ success: false, message: 'Tous les champs sont requis' });
+      }
+
+      // Valider complexité mdp
+      const pwdRegex = /(?=^.{8,}$)(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).*/;
+      if (!pwdRegex.test(newPassword)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Le mot de passe doit faire au moins 8 caractères et contenir une majuscule, un chiffre et un symbole'
+        });
+      }
+
+      User.verifyPasswordResetCode(email, code, async (err, record) => {
+        if (err) return res.status(500).json({ success: false, message: 'Erreur serveur' });
+        if (!record) return res.status(400).json({ success: false, message: 'Code invalide ou expiré' });
+
+        const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+        User.updatePassword(email, hashedPassword, (err) => {
+          if (err) return res.status(500).json({ success: false, message: 'Erreur redéfinition mot de passe' });
+
+          User.deletePasswordResetCodes(email, () => { }); // Cleanup
+          res.json({ success: true, message: 'Mot de passe réinitialisé avec succès' });
+        });
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ success: false, message: 'Erreur serveur' });
     }
   }
 

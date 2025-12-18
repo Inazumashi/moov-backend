@@ -26,10 +26,10 @@ const rideController = {
 
       // Validation
       const requiredFields = [
-        'departure_station_id', 'arrival_station_id', 
+        'departure_station_id', 'arrival_station_id',
         'departure_date', 'departure_time'
       ];
-      
+
       for (const field of requiredFields) {
         if (!req.body[field]) {
           return res.status(400).json({
@@ -77,22 +77,22 @@ const rideController = {
             // Si l'utilisateur n'est pas encore conducteur, le devenir automatiquement
             if (!user.is_driver) {
               console.log(`🚗 Utilisateur ${driverId} devient conducteur automatiquement`);
-              
-              db.run('UPDATE users SET is_driver = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?', 
-                [driverId], 
+
+              db.run('UPDATE users SET is_driver = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                [driverId],
                 (updateErr) => {
                   if (updateErr) {
                     console.error('Erreur mise à jour conducteur:', updateErr);
                     // On continue quand même avec la création du trajet
                   } else {
                     console.log(`✅ Utilisateur ${driverId} marqué comme conducteur`);
-                    
+
                     // Mettre aussi has_car = 1 par défaut
                     db.run('UPDATE users SET has_car = 1 WHERE id = ?', [driverId], (carErr) => {
                       if (carErr) console.error('Erreur mise à jour voiture:', carErr);
                     });
                   }
-                  
+
                   // Continuer avec la création du trajet
                   _createRideAfterDriverCheck();
                 }
@@ -131,7 +131,7 @@ const rideController = {
                 }
 
                 // Mettre à jour l'itinéraire populaire
-                Route.updatePopularRoute(departure_station_id, arrival_station_id, () => {});
+                Route.updatePopularRoute(departure_station_id, arrival_station_id, () => { });
 
                 // Obtenir les détails complets du trajet créé
                 Ride.findById(newRide.id, (err, rideDetails) => {
@@ -142,8 +142,8 @@ const rideController = {
 
                   res.status(201).json({
                     success: true,
-                    message: recurrence === 'none' ? 
-                      'Trajet créé avec succès' : 
+                    message: recurrence === 'none' ?
+                      'Trajet créé avec succès' :
                       'Trajet récurrent créé avec succès',
                     ride: rideDetails || { id: newRide.id },
                     user_became_driver: !user.is_driver // Indique si l'utilisateur vient de devenir conducteur
@@ -199,7 +199,7 @@ const rideController = {
           Route.updatePopularRoute(
             searchParams.departure_station_id,
             searchParams.arrival_station_id,
-            () => {}
+            () => { }
           );
         }
 
@@ -233,7 +233,7 @@ const rideController = {
 
         // Validate IDs
         if ((searchParams.departure_station_id && isNaN(searchParams.departure_station_id)) ||
-            (searchParams.arrival_station_id && isNaN(searchParams.arrival_station_id))) {
+          (searchParams.arrival_station_id && isNaN(searchParams.arrival_station_id))) {
           return res.status(400).json({ success: false, message: 'IDs de stations invalides' });
         }
 
@@ -399,7 +399,7 @@ const rideController = {
       const { status, page = 1, limit = 20 } = req.query;
 
       // CORRECTION : Utilisation correcte de l'alias "ars" au lieu de "as"
-            let sql = `SELECT r.*, 
+      let sql = `SELECT r.*, 
             ds.name as departure_station,
             ars.name as arrival_station, 
             (SELECT COUNT(*) FROM bookings b 
@@ -410,20 +410,20 @@ const rideController = {
            JOIN stations ds ON r.departure_station_id = ds.id
            JOIN stations ars ON r.arrival_station_id = ars.id
            WHERE r.driver_id = ?`;
-      
+
       const params = [driverId];
-      
+
       if (status) {
         sql += ` AND r.status = ?`;
         params.push(status);
       }
-      
+
       sql += ` ORDER BY r.departure_date DESC 
                LIMIT ? OFFSET ?`;
-      
+
       const offset = (page - 1) * limit;
       params.push(parseInt(limit), offset);
-      
+
       db.all(sql, params, (err, rides) => {
         if (err) {
           console.error('Erreur récupération trajets:', err);
@@ -516,7 +516,7 @@ const rideController = {
         values.push(rideId);
 
         const sql = `UPDATE rides SET ${updates.join(', ')} WHERE id = ?`;
-        
+
         db.run(sql, values, (err) => {
           if (err) {
             console.error('Erreur mise à jour trajet:', err);
@@ -578,7 +578,7 @@ const rideController = {
 
           if (permanent) {
             // Supprimer définitivement
-            db.run(`DELETE FROM rides WHERE id = ?`, [rideId], function(err) {
+            db.run(`DELETE FROM rides WHERE id = ?`, [rideId], function (err) {
               if (err) {
                 console.error('Erreur suppression trajet (permanent):', err);
                 return res.status(500).json({ success: false, message: 'Erreur lors de la suppression' });
@@ -634,7 +634,7 @@ const rideController = {
           }
 
           // Supprimer définitivement
-          db.run(`DELETE FROM rides WHERE id = ?`, [rideId], function(err) {
+          db.run(`DELETE FROM rides WHERE id = ?`, [rideId], function (err) {
             if (err) {
               console.error('Erreur suppression trajet:', err);
               return res.status(500).json({ success: false, message: 'Erreur lors de la suppression' });

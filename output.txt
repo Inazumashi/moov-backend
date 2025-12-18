@@ -1,0 +1,14 @@
+✅ Base SQLite connectée : moov.db
+=== DRIVERS ===
+[
+  {
+    "id": 1,
+    "first_name": "Test",
+    "last_name": "User",
+    "is_driver": 1
+  }
+]
+
+=== RIDES FOR DRIVER ID 1 (Raw) ===
+[]
+This driver has no rides.

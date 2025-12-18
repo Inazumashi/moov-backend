@@ -1,0 +1,8 @@
+Secret: d8369c9fc8e84e2c7970b7f2a45f4258795697a0df4105eeeca4cffa9849f050fc35050d8e98c54795a028edc00dc38e10ff79652258b357b2aa243a13237686
+[SQL DEBUG] get SELECT id, email FROM users WHERE is_driver = 1 LIMIT 1
+✅ Base SQLite connectée : moov.db
+User: { id: 1, email: 'test@um6p.ma' }
+Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNzY2MDE4NjUwLCJleHAiOjE3NjYxMDUwNTB9.tp1kgy0jvt0iRlPkSDvLskeJDkn-U5ETpRptfSqJptc
+Response Status: false
+Rides Count: 0
+First Ride: None

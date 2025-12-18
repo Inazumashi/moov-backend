@@ -1,0 +1,34 @@
+=== UTILISATEURS ===
+ID: 1, Email: test@um6p.ma, Driver: 1
+ID: 3, Email: driver_test@edu.univ.fr, Driver: 1
+ID: 5, Email: passenger_test@edu.univ.fr, Driver: 0
+ID: 6, Email: Abdelmoughit.RAGHIB@emines.um6p.ma, Driver: 1
+ID: 7, Email: Mouslim.LAHRECH@emines.um6p.ma, Driver: 0
+ID: 8, Email: pass_1766009166916@um6p.ma, Driver: 0
+ID: 9, Email: driver_1766009181731@um6p.ma, Driver: 1
+ID: 11, Email: pass_1766009278372@um6p.ma, Driver: 0
+ID: 12, Email: driver_1766009281601@um6p.ma, Driver: 1
+ID: 14, Email: pass_1766009361847@um6p.ma, Driver: 0
+ID: 15, Email: driver_1766009364995@um6p.ma, Driver: 1
+ID: 18, Email: d_1766011612301@test.com, Driver: 1
+ID: 19, Email: p_1766011612301@test.com, Driver: 0
+ID: 25, Email: d_1766014260712@t.com, Driver: 1
+
+=== TRAJETS ===
+Ride ID: 4, Driver: 9, Status: active, UM6P - Entrée Principale -> UM6P - Résidences
+Ride ID: 5, Driver: 12, Status: active, UM6P - Entrée Principale -> UM6P - Résidences
+Ride ID: 6, Driver: 15, Status: active, UM6P - Entrée Principale -> UM6P - Résidences
+Ride ID: 8, Driver: 18, Status: active, UM6P - Entrée Principale -> UM6P - Résidences
+Ride ID: 9, Driver: 25, Status: active, UM6P - Entrée Principale -> UM6P - Résidences
+Ride ID: 10, Driver: 6, Status: active, UCA - Faculté des Sciences Semlalia -> EMI
+Ride ID: 11, Driver: 6, Status: active, EMI -> UM6P - Entrée Principale
+Ride ID: 12, Driver: 6, Status: active, UM6P - Entrée Principale -> ENSIAS
+Ride ID: 13, Driver: 6, Status: active, UM6P - Entrée Principale -> UCA - Faculté des Sciences Semlalia
+Ride ID: 14, Driver: 6, Status: active, EMI -> UCA - Faculté des Sciences Semlalia
+Ride ID: 15, Driver: 6, Status: active, EMI -> UCA - Faculté des Sciences Semlalia
+Ride ID: 16, Driver: 6, Status: active, UM6P - Entrée Principale -> UCA - Faculté des Sciences Semlalia
+Ride ID: 17, Driver: 6, Status: active, EMI -> UM6P - Entrée Principale
+
+Total trajets: 13
+
+Drivers uniques: 9, 12, 15, 18, 25, 6

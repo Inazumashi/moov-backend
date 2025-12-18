@@ -15,6 +15,11 @@ router.get('/my-reservations', reservationController.myReservations);
 
 // ✅ RÉSERVATIONS D'UN TRAJET (POUR LE CONDUCTEUR)
 router.get('/ride/:rideId', reservationController.rideReservations);
+router.get('/for-ride/:rideId', reservationController.rideReservations); // Alias pour compatibilité frontend
+
+// ✅ CONFIRMER/REFUSER (CONDUCTEUR)
+router.put('/:id/confirm', reservationController.confirm);
+router.put('/:id/reject', reservationController.reject);
 
 // ✅ ANNULER UNE RÉSERVATION
 router.put('/:id/cancel', reservationController.cancel);

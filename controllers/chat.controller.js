@@ -1,3 +1,5 @@
+const db = require('../config/db');
+
 const chatController = {
   // Créer ou récupérer une conversation
   createOrGet: async (req, res) => {
@@ -5,9 +7,9 @@ const chatController = {
     const { ride_id } = req.body;
 
     if (!ride_id) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'ID du trajet requis' 
+      return res.status(400).json({
+        success: false,
+        message: 'ID du trajet requis'
       });
     }
 
@@ -21,16 +23,16 @@ const chatController = {
       const ride = await db.get(rideSql, [ride_id]);
 
       if (!ride) {
-        return res.status(404).json({ 
-          success: false, 
-          message: 'Trajet non trouvé ou non disponible' 
+        return res.status(404).json({
+          success: false,
+          message: 'Trajet non trouvé ou non disponible'
         });
       }
 
       // 2. Vérifier que l'utilisateur est impliqué dans le trajet
       // (soit conducteur, soit passager ayant réservé)
       const isDriver = ride.driver_id === userId;
-      
+
       let isPassenger = false;
       if (!isDriver) {
         const passengerSql = `
@@ -45,9 +47,9 @@ const chatController = {
       }
 
       if (!isDriver && !isPassenger) {
-        return res.status(403).json({ 
-          success: false, 
-          message: 'Vous ne participez pas à ce trajet' 
+        return res.status(403).json({
+          success: false,
+          message: 'Vous ne participez pas à ce trajet'
         });
       }
 
@@ -65,7 +67,7 @@ const chatController = {
         // 4. Si conversation existe, la retourner
         // Récupérer les participants
         const participantsSql = `
-          SELECT u.id, u.first_name, u.last_name, u.profile_picture
+          SELECT u.id, u.first_name, u.last_name
           FROM conversation_participants cp
           JOIN users u ON cp.user_id = u.id
           WHERE cp.conversation_id = ?
@@ -91,13 +93,13 @@ const chatController = {
         WHERE ride_id = ? 
         AND status IN ('confirmed', 'pending')
       `;
-      
+
       const participantsRows = await db.all(participantsSql, [ride.driver_id, ride_id]);
       const participantIds = participantsRows.map(row => row.user_id);
 
       // Créer la conversation (utiliser une transaction)
       const newConvId = await createConversationWithParticipants(
-        ride_id, 
+        ride_id,
         participantIds
       );
 
@@ -114,7 +116,7 @@ const chatController = {
 
       // Récupérer les infos des participants
       const participantsInfoSql = `
-        SELECT u.id, u.first_name, u.last_name, u.profile_picture
+        SELECT u.id, u.first_name, u.last_name
         FROM users u
         WHERE u.id IN (${participantIds.join(',')})
       `;
@@ -168,7 +170,63 @@ const chatController = {
     });
   },
 
+  // Supprimer un message
+  deleteMessage: async (req, res) => {
+    const userId = req.userId;
+    const { id } = req.params;
+
+    try {
+      const sql = 'SELECT sender_id FROM messages WHERE id = ?';
+      const message = await db.get(sql, [id]);
+
+      if (!message) {
+        return res.status(404).json({ success: false, message: 'Message non trouvé' });
+      }
+
+      if (message.sender_id !== userId) {
+        return res.status(403).json({ success: false, message: 'Vous ne pouvez supprimer que vos propres messages' });
+      }
+
+      await db.run('DELETE FROM messages WHERE id = ?', [id]);
+      res.json({ success: true, message: 'Message supprimé' });
+    } catch (error) {
+      console.error('Erreur suppression message:', error);
+      res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+  },
+
   // ... autres méthodes existantes ...
+  // Obtenir le nombre de messages non lus par conversation
+  getUnreadCountByConversation: async (req, res) => {
+    const userId = req.userId;
+
+    try {
+      const sql = `
+        SELECT 
+          c.id as conversation_id,
+          COUNT(m.id) as unread_count
+        FROM conversations c
+        JOIN messages m ON c.id = m.conversation_id
+        WHERE (c.driver_id = ? OR c.passenger_id = ?)
+        AND m.sender_id != ?
+        AND m.is_read = 0
+        GROUP BY c.id
+      `;
+
+      const rows = await db.all(sql, [userId, userId, userId]);
+
+      // Convertir en objet { convId: count }
+      const unreadMap = {};
+      rows.forEach(row => {
+        unreadMap[row.conversation_id] = row.unread_count;
+      });
+
+      res.json({ success: true, data: unreadMap });
+    } catch (error) {
+      console.error('Erreur unread by conversation:', error);
+      res.status(500).json({ success: false, message: 'Erreur serveur' });
+    }
+  }
 };
 
 module.exports = chatController;

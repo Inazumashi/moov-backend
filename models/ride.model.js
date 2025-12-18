@@ -448,6 +448,71 @@ const Ride = {
     db.run(sql, [status, rideId], callback);
   },
 
+  // ✅ NOUVEAU: Marquer le trajet comme complet (et les réservations associées)
+  complete: (rideId, driverId, callback) => {
+    // 1. Vérifier que c'est bien le conducteur
+    db.get('SELECT id FROM rides WHERE id = ? AND driver_id = ?', [rideId, driverId], (err, ride) => {
+      if (err) return callback(err);
+      if (!ride) return callback(new Error('Trajet non trouvé ou non autorisé'));
+
+      // 2. Transaction pour tout mettre à jour
+      db.run('BEGIN TRANSACTION', (err) => {
+        if (err) return callback(err);
+
+        // Update Ride Status
+        db.run("UPDATE rides SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [rideId], (err) => {
+          if (err) {
+            db.run('ROLLBACK');
+            return callback(err);
+          }
+
+          // Update Bookings Status
+          db.run("UPDATE bookings SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE ride_id = ? AND status = 'confirmed'", [rideId], (err) => {
+            if (err) {
+              db.run('ROLLBACK');
+              return callback(err);
+            }
+
+            db.run('COMMIT', (err) => {
+              if (err) return callback(err);
+              callback(null, { success: true, message: 'Trajet terminé avec succès' });
+            });
+          });
+        });
+      });
+    });
+  },
+
+  // ✅ NOUVEAU: Supprimer un trajet (avec vérification)
+  delete: (rideId, driverId, callback) => {
+    // 1. Vérifier le trajet et le conducteur
+    db.get('SELECT id FROM rides WHERE id = ? AND driver_id = ?', [rideId, driverId], (err, ride) => {
+      if (err) return callback(err);
+      if (!ride) return callback(new Error('Trajet non trouvé ou non autorisé'));
+
+      // 2. Vérifier s'il y a des réservations actives (confirmed ou completed)
+      db.get("SELECT COUNT(*) as count FROM bookings WHERE ride_id = ? AND status IN ('confirmed', 'completed')", [rideId], (err, result) => {
+        if (err) return callback(err);
+        
+        if (result.count > 0) {
+          return callback(new Error('Impossible de supprimer un trajet avec des réservations actives. Veuillez annuler les réservations d\'abord.'));
+        }
+
+        // 3. Supprimer (Soft delete ou Hard delete? Ici Hard delete comme demandé)
+        // D'abord supprimer les bookings annulés/en attente pour nettoyer (optionnel mais propre)
+        db.run('DELETE FROM bookings WHERE ride_id = ?', [rideId], (err) => {
+            if(err) return callback(err);
+            
+            // Supprimer le trajet
+            db.run('DELETE FROM rides WHERE id = ?', [rideId], (err) => {
+              if (err) return callback(err);
+              callback(null, { success: true });
+            });
+        });
+      });
+    });
+  },
+
   // ✅ CORRECTION 5: Trajets d'aujourd'hui (PENDING + ACTIVE)
   getTodayRides: (callback) => {
     const sql = `SELECT r.*,

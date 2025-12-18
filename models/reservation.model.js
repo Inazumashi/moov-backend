@@ -2,9 +2,10 @@ const db = require('../config/db');
 const util = require('util');
 
 // Promisification
-const dbGet = util.promisify(db.get);
-const dbRun = util.promisify(db.run);
-const dbAll = util.promisify(db.all);
+// Promisification
+const dbGet = util.promisify(db.get).bind(db);
+const dbRun = util.promisify(db.run).bind(db);
+const dbAll = util.promisify(db.all).bind(db);
 
 const Reservation = {
   // Créer une réservation - VERSION CORRIGÉE
@@ -17,7 +18,7 @@ const Reservation = {
       try {
         // 1. Vérifier que le trajet existe et a des places
         const ride = await dbGet(
-          `SELECT available_seats, price_per_seat FROM rides WHERE id = ? AND status IN ('active', 'pending')`, 
+          `SELECT available_seats, price_per_seat FROM rides WHERE id = ? AND status IN ('active', 'pending')`,
           [rideId]
         );
 
@@ -38,25 +39,25 @@ const Reservation = {
 
         // 2. Diminuer les places disponibles
         console.log('🔄 Mise à jour des places disponibles...');
-        await dbRun(`UPDATE rides SET available_seats = available_seats - ? WHERE id = ?`, 
+        await dbRun(`UPDATE rides SET available_seats = available_seats - ? WHERE id = ?`,
           [seatsBooked, rideId]);
 
         // 3. Créer la réservation avec une fonction callback pour obtenir lastID
         console.log('🔄 Création de la réservation...');
-        
+
         // ✅ SOLUTION : Utiliser db.run avec callback (pas promisifié)
         const insertSql = `INSERT INTO bookings (ride_id, passenger_id, seats_booked, total_price) 
                            VALUES (?, ?, ?, ?)`;
-        
-        db.run(insertSql, [rideId, passengerId, seatsBooked, totalPrice], function(err) {
+
+        db.run(insertSql, [rideId, passengerId, seatsBooked, totalPrice], function (err) {
           if (err) {
             console.error('❌ Erreur insertion:', err);
             return reject(err);
           }
-          
+
           // ✅ this.lastID est disponible ici
           console.log('✅ Réservation créée avec ID:', this.lastID);
-          
+
           resolve({
             id: this.lastID,
             totalPrice,

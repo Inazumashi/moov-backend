@@ -1,37 +1,37 @@
-// routes/ride.routes.js - VERSION COMPLÈTE CORRIGÉE
 const express = require('express');
 const router = express.Router();
 const rideController = require('../controllers/ride.controller');
+const preferenceController = require('../controllers/preference.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 
-// --- 1. Routes Publiques Spécifiques (D'abord) ---
+// ============================================================
+// ⚠️ IMPORTANT: Les routes spécifiques DOIVENT être avant /:id
+// Sinon Express interprète "my-rides" comme un ID !
+// ============================================================
+
+// ============================================================
+// 1. ROUTES SPÉCIFIQUES (avant /:id)
+// ============================================================
+
+// Recherche - publique
 router.get('/search', rideController.search);
 router.get('/quick-search', rideController.quickSearch);
 
-// --- 2. Routes Protégées Spécifiques (AVANT /:id) ---
+// ✅ CORRECTION: my-rides AVANT /:id
 router.get('/my-rides', authMiddleware, rideController.myRides);
+router.get('/suggestions', authMiddleware, preferenceController.getSuggestions);
 
-// --- 3. Routes Publiques Dynamiques (Après les spécifiques) ---
+// ============================================================
+// 2. ROUTES AVEC PARAMÈTRES (après les routes spécifiques)
+// ============================================================
+
+// Détails d'un trajet - public
 router.get('/:id', rideController.getDetails);
 
-// --- 4. Autres Routes Protégées ---
-// Appliquer authMiddleware pour toutes les routes suivantes
-router.use(authMiddleware);
-
-// ✅ CRÉATION DE TRAJET
-router.post('/', rideController.create);
-
-// ✅ MISE À JOUR DE TRAJET
-// Route de modification supprimée pour désactiver l'édition côté API
-// (front-end doit afficher seulement le bouton Supprimer)
-
-// ✅ SUPPRESSION DE TRAJET (ANNULATION)
-router.delete('/:id', rideController.cancel);
-
-// ✅ SUPPRESSION DÉFINITIVE (SI AUCUNE RÉSERVATION ACTIVE)
-router.delete('/:id/remove', rideController.remove);
-
-// ✅ MARQUER TRAJET COMME COMPLÉTÉ
-router.patch('/:id/complete', rideController.complete);
+// Actions de modification (Auth requise)
+router.post('/', authMiddleware, rideController.create);
+router.post('/preferences', authMiddleware, preferenceController.setFrequentRoute);
+router.delete('/:id', authMiddleware, rideController.remove);
+router.put('/:id/complete', authMiddleware, rideController.complete);
 
 module.exports = router;

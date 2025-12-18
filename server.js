@@ -43,7 +43,7 @@ app.post('/api/test-simple', (req, res) => {
   console.log('📨 Test simple route hit!');
   console.log('Body:', req.body);
   console.log('Headers:', req.headers);
-  
+
   res.json({
     success: true,
     message: 'Test route works!',
@@ -64,6 +64,7 @@ const advancedRoutes = require('./routes/advanced.routes');
 const statsRoutes = require('./routes/stats.routes');
 const chatRoutes = require('./routes/chat.routes');
 const paymentRoutes = require('./routes/payment.routes');
+const notificationRoutes = require('./routes/notification.routes'); // Notification Routes
 
 // 4. ROUTES API
 app.use('/api/auth', authRoutes);
@@ -77,6 +78,7 @@ app.use('/api/advanced', advancedRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/payment', paymentRoutes);
+app.use('/api/notifications', notificationRoutes); // Use Notification Routes
 
 // Route pour vérifier que l'API fonctionne
 app.get('/api/health', (req, res) => {
@@ -97,12 +99,12 @@ app.get('/api/debug/codes', (req, res) => {
           strftime('%Y-%m-%d %H:%M:%S', expires_at) as expires_at,
           strftime('%Y-%m-%d %H:%M:%S', created_at) as created_at
           FROM verification_codes 
-          ORDER BY created_at DESC`, 
+          ORDER BY created_at DESC`,
     (err, rows) => {
       if (err) {
         return res.status(500).json({ error: err.message });
       }
-      res.json({ 
+      res.json({
         count: rows.length,
         codes: rows,
         now: new Date().toISOString()
@@ -180,7 +182,7 @@ app.use('*', (req, res) => {
 // Gestionnaire d'erreurs global
 app.use((err, req, res, next) => {
   console.error('🔥 Erreur serveur:', err.stack);
-  
+
   // Gestion spécifique des erreurs CORS
   if (err.message.includes('CORS')) {
     return res.status(403).json({
@@ -189,10 +191,10 @@ app.use((err, req, res, next) => {
       hint: 'Vérifiez l\'origine de votre requête. En développement, toutes les origines sont autorisées.'
     });
   }
-  
+
   const statusCode = err.status || 500;
   const message = err.message || 'Erreur serveur interne';
-  
+
   res.status(statusCode).json({
     success: false,
     message,
@@ -223,7 +225,7 @@ console.log('- GET  /api/rides/search'); // <-- AJOUTE
 const CLEANUP_INTERVAL_MS = process.env.CLEANUP_EXPIRED_CODES_INTERVAL_MS ? parseInt(process.env.CLEANUP_EXPIRED_CODES_INTERVAL_MS, 10) : 10 * 60 * 1000;
 function cleanupExpiredVerificationCodes() {
   const sql = "DELETE FROM verification_codes WHERE expires_at <= datetime('now')";
-  db.run(sql, function(err) {
+  db.run(sql, function (err) {
     if (err) console.error('Erreur suppression codes expirés:', err.message);
     else if (this.changes && this.changes > 0) console.log(`✅ Codes expirés supprimés: ${this.changes}`);
   });

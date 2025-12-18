@@ -24,7 +24,7 @@ const User = {
                  (email, password, first_name, last_name, phone, university, profile_type, student_id) 
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
 
-    db.run(sql, [email, password, first_name, last_name, phone, university, profile_type, student_id], function(err) {
+    db.run(sql, [email, password, first_name, last_name, phone, university, profile_type, student_id], function (err) {
       if (err) return callback(err);
       const newId = this.lastID;
       // Récupérer l'utilisateur créé avec toutes ses colonnes publiques
@@ -105,8 +105,40 @@ const User = {
   activatePremium: (userId, callback) => {
     // Met à jour le status premium à 1 (True)
     // Assure-toi que ta base de données a bien la colonne 'premium_status'
-    const sql = `UPDATE users SET premium_status = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
+    const sql = `UPDATE users SET premium_status = 'premium', updated_at = CURRENT_TIMESTAMP WHERE id = ?`;
     db.run(sql, [userId], callback);
+  },
+
+  // Sauvegarder code de réinitialisation mot de passe
+  savePasswordResetCode: (email, code, expiresAt, callback) => {
+    let expiresAtFormatted = expiresAt;
+    if (typeof expiresAt === 'number') {
+      expiresAtFormatted = new Date(expiresAt).toISOString();
+    } else if (expiresAt instanceof Date) {
+      expiresAtFormatted = expiresAt.toISOString();
+    }
+    const sql = `INSERT INTO password_reset_codes (email, code, expires_at) VALUES (?, ?, ?)`;
+    db.run(sql, [email, code, expiresAtFormatted], callback);
+  },
+
+  // Vérifier code de réinitialisation
+  verifyPasswordResetCode: (email, code, callback) => {
+    const sql = `SELECT * FROM password_reset_codes 
+                 WHERE email = ? AND code = ? AND expires_at > datetime('now') 
+                 ORDER BY created_at DESC LIMIT 1`;
+    db.get(sql, [email, code], callback);
+  },
+
+  // Supprimer les codes de réinitialisation pour un email
+  deletePasswordResetCodes: (email, callback) => {
+    const sql = 'DELETE FROM password_reset_codes WHERE email = ?';
+    db.run(sql, [email], callback);
+  },
+
+  // Mettre à jour le mot de passe
+  updatePassword: (email, hashedPassword, callback) => {
+    const sql = 'UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE email = ?';
+    db.run(sql, [hashedPassword, email], callback);
   }
 };
 

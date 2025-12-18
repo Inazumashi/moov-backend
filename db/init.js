@@ -333,7 +333,37 @@ db.serialize(() => {
     else console.log('✅ Table "notifications" prête');
   });
 
+
+  // 15. Table password_reset_codes
+  db.run(`CREATE TABLE IF NOT EXISTS password_reset_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    code TEXT NOT NULL,
+    expires_at DATETIME NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (email) REFERENCES users(email) ON DELETE CASCADE
+  )`, (err) => {
+    if (err) console.error('❌ Erreur password_reset_codes:', err.message);
+    else console.log('✅ Table "password_reset_codes" prête');
+  });
+
+  // 16. Table user_preferences (for Frequent Routes)
+  db.run(`CREATE TABLE IF NOT EXISTS user_preferences (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    key TEXT NOT NULL, -- e.g., 'frequent_route_home_uni'
+    value TEXT, -- JSON or string value
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(user_id, key)
+  )`, (err) => {
+    if (err) console.error('❌ Erreur user_preferences:', err.message);
+    else console.log('✅ Table "user_preferences" prête');
+  });
+
   // Migration safety: ensure important columns exist on older DBs before inserting data
+
   const ensureColumn = (table, column, definition, cb) => {
     db.all(`PRAGMA table_info(${table})`, (err, cols) => {
       if (err) return cb && cb(err);
@@ -365,38 +395,38 @@ db.serialize(() => {
   // Attendre que toutes les tables soient créées avant d'insérer les données
   setTimeout(() => {
     console.log("📊 Insertion des données initiales...");
-    
+
     // Insertion des stations
     const stations = [
       // UM6P - Benguerir (university_id = 1)
       ['UM6P - Entrée Principale', 'university', 'Benguerir', 'Lotissement 2070', 32.230, -7.933, 1],
       ['UM6P - Résidences', 'university', 'Benguerir', 'Résidences Green City', 32.232, -7.930, 1],
       ['Gare Benguerir', 'train_station', 'Benguerir', 'Gare ONCF', 32.245, -7.950, null],
-      
+
       // UCA - Marrakech (university_id = 2)
       ['UCA - Faculté des Sciences Semlalia', 'university', 'Marrakech', 'Avenue Prince Moulay Abdellah', 31.641, -8.010, 2],
       ['Gare Marrakech', 'train_station', 'Marrakech', 'Avenue Hassan II', 31.633, -8.008, null],
-      
+
       // UIR - Rabat (university_id = 3)
       ['UIR - Campus Technopolis', 'university', 'Rabat', 'Technopolis Rabat-Shore', 33.992, -6.792, 3],
-      
+
       // ENSIAS - Rabat (university_id = 4)
       ['ENSIAS', 'university', 'Rabat', 'Avenue Mohamed Ben Abdellah Regragui', 33.981, -6.872, 4],
-      
+
       // EMI - Rabat (university_id = 5)
       ['EMI', 'university', 'Rabat', 'Avenue des Nations Unies', 33.970, -6.860, 5],
-      
+
       // Stations générales
       ['Gare Casa-Voyageurs', 'train_station', 'Casablanca', 'Place de la Gare', 33.590, -7.583, null],
       ['Aéroport Mohammed V', 'bus_station', 'Casablanca', 'Aéroport Mohammed V', 33.367, -7.590, null],
     ];
-    
+
     const stationPlaceholders = stations.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ');
     const stationValues = stations.flat();
 
     db.run(`INSERT OR IGNORE INTO stations (name, type, city, address, latitude, longitude, university_id) 
-            VALUES ${stationPlaceholders}`, 
-      stationValues, 
+            VALUES ${stationPlaceholders}`,
+      stationValues,
       (err) => {
         if (err) {
           console.error('❌ Erreur insertion stations:', err.message);
@@ -411,15 +441,15 @@ db.serialize(() => {
           (email, password, first_name, last_name, university, profile_type, is_verified, is_driver) 
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            'test@um6p.ma', 
-            hashedPassword, 
-            'Test', 
-            'User', 
-            'UM6P - Université Mohammed VI Polytechnique', 
-            'student', 
+            'test@um6p.ma',
+            hashedPassword,
+            'Test',
+            'User',
+            'UM6P - Université Mohammed VI Polytechnique',
+            'student',
             1,
             1
-          ], 
+          ],
           (err) => {
             if (err) {
               console.error('❌ Erreur insertion utilisateur test:', err.message);

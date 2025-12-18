@@ -12,6 +12,9 @@ router.post('/verify-code', authController.verifyEmailCode);
 router.post('/register', authController.register);
 router.post('/login', authController.login);
 router.post('/resend-code', authController.resendVerificationCode);
+router.post('/forgot-password', authController.forgotPassword);
+router.post('/reset-password', authController.resetPassword);
+router.put('/change-password', authMiddleware, authController.changePassword);
 router.get('/universities', authController.getUniversities);
 
 // Protected routes 

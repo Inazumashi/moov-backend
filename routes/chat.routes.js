@@ -83,7 +83,7 @@ router.post('/conversations', (req, res) => {
       AND driver_id = ? 
       AND passenger_id = ?
     `;
-    
+
     db.get(checkSql, [ride_id, driverId, passengerId], (err, existing) => {
       if (existing) {
         return res.json({ success: true, data: existing });
@@ -95,7 +95,7 @@ router.post('/conversations', (req, res) => {
         VALUES (?, ?, ?, CURRENT_TIMESTAMP)
       `;
 
-      db.run(insertSql, [ride_id, driverId, passengerId], function(err) {
+      db.run(insertSql, [ride_id, driverId, passengerId], function (err) {
         if (err) {
           console.error('Erreur création conversation:', err);
           return res.status(500).json({ success: false, message: 'Erreur serveur' });
@@ -151,15 +151,62 @@ router.get('/messages/:conversationId', (req, res) => {
   });
 });
 
+// Obtenir les nouveaux messages (polling)
+router.get('/conversations/:conversationId/new-messages', (req, res) => {
+  const userId = req.userId;
+  const { conversationId } = req.params;
+  const { since } = req.query;
+
+  if (!since) {
+    return res.status(400).json({ success: false, message: 'Paramètre since requis' });
+  }
+
+  // Vérifier accès
+  const checkSql = `
+    SELECT id FROM conversations 
+    WHERE id = ? 
+    AND (driver_id = ? OR passenger_id = ?)
+  `;
+
+  db.get(checkSql, [conversationId, userId, userId], (err, conversation) => {
+    if (err || !conversation) {
+      return res.status(403).json({ success: false, message: 'Accès refusé' });
+    }
+
+    const sql = `
+      SELECT 
+        id,
+        conversation_id,
+        sender_id,
+        message,
+        is_read,
+        created_at
+      FROM messages
+      WHERE conversation_id = ?
+      AND created_at > ?
+      ORDER BY created_at ASC
+    `;
+
+    db.all(sql, [conversationId, since], (err, messages) => {
+      if (err) {
+        console.error('Erreur récupération nouveaux messages:', err);
+        return res.status(500).json({ success: false, message: 'Erreur serveur' });
+      }
+
+      res.json({ success: true, data: messages || [] });
+    });
+  });
+});
+
 // Envoyer un message
 router.post('/messages', (req, res) => {
   const userId = req.userId;
   const { conversation_id, message } = req.body;
 
   if (!conversation_id || !message) {
-    return res.status(400).json({ 
-      success: false, 
-      message: 'conversation_id et message requis' 
+    return res.status(400).json({
+      success: false,
+      message: 'conversation_id et message requis'
     });
   }
 
@@ -180,22 +227,22 @@ router.post('/messages', (req, res) => {
       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
     `;
 
-    db.run(sql, [conversation_id, userId, message], function(err) {
+    db.run(sql, [conversation_id, userId, message], function (err) {
       if (err) {
         console.error('Erreur envoi message:', err);
         return res.status(500).json({ success: false, message: 'Erreur serveur' });
       }
 
-      res.json({ 
-        success: true, 
-        data: { 
+      res.json({
+        success: true,
+        data: {
           id: this.lastID,
           conversation_id,
           sender_id: userId,
           message,
           is_read: 0,
           created_at: new Date().toISOString()
-        } 
+        }
       });
     });
   });
@@ -245,6 +292,18 @@ router.get('/unread-count', (req, res) => {
 
     res.json({ success: true, unread_count: result.count || 0 });
   });
+});
+
+// Obtenir les non lus par conversation
+router.get('/unread-by-conversation', (req, res) => {
+  const chatController = require('../controllers/chat.controller');
+  chatController.getUnreadCountByConversation(req, res);
+});
+
+// Supprimer un message
+router.delete('/messages/:id', (req, res) => {
+  const chatController = require('../controllers/chat.controller');
+  chatController.deleteMessage(req, res);
 });
 
 module.exports = router;
